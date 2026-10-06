@@ -1,6 +1,8 @@
-# Kleidungs-Kiosk — Spec v1.0
+# Kleidungs-Kiosk — Spec v1.1
 
 > Status: **Final, bereit zur Umsetzung. Keine offenen Punkte.** Stand 2026-09-21. Alle `OFFEN`-Punkte aus v0.1 sind entschieden. Wo die Logik-Datei oder die Assets keine Antwort hergaben, gilt eine Entscheidung `A-xx`. Jana hat alle bestätigt (Liste in [§14](#14-entscheidungen-und-erledigte-punkte)). Jede lässt sich später über `RULES` oder ein Asset ändern, ohne die Spec anzufassen. Fehlende Grafiken starten als Platzhalter (§12.4). Die Unterschiede zwischen v0.1, der Logik-Datei und den Dateien im Ordner stehen im Prüfbericht in [§18](#18-prüfbericht-v01--v10). v0.1 liegt als `kleidungs-kiosk-spec.v0.1.md` daneben.
+>
+> **v1.1 (2026-10-06): visuelle Überarbeitung.** Layout, Thermometer, Farben und alle Icons sind neu gestaltet (§11, §12, Entscheidungen A-16…A-20, Q36…Q40). Die Logik (§5–§10, `RULES`, `WX`) ist unverändert, ebenso Zustände, Aktualisierung und Debug-/Test-Modus.
 >
 > Quellen: `Kleidungs-Kiosk Wetter-Kleidungslogik.md` (2026-09-17), `clothes/` (19 SVGs), `icons/` (12 SVGs). Ein Styleguide liegt nicht vor.
 
@@ -15,7 +17,7 @@ Ein altes iPhone 8 hängt als Single-Purpose-Kiosk im Flur. Beim Aufwecken zeigt
 **In Scope (v1)**
 - Genau ein Screen mit einer Outfit-Empfehlung für die nächsten ~4 Stunden
 - Wetterzeile: Zustand, Temperatur, bis zu 2 Hinweis-Icons
-- Wärmeskala mit Positionspunkt
+- Pixel-Thermometer mit Füllstand und Temperaturzahl
 - Offline-Fähigkeit (letzter Stand bleibt sichtbar)
 - Debug-Modus und Test-Modus per URL
 
@@ -59,6 +61,7 @@ Ein altes iPhone 8 hängt als Single-Purpose-Kiosk im Flur. Beim Aufwecken zeigt
 /assets/clothes/*.svg  – Quell-SVGs, zur Laufzeit nicht benutzt
 /assets/icons/*.svg    – Quell-SVGs, zur Laufzeit nicht benutzt
 /tools/svg2symbol.*    – einmalige Asset-Konvertierung (§12.1), zur Laufzeit nicht benutzt
+/tools/pixel_icons.py  – zeichnet die Pixel-Icons und schreibt sie ins Sprite (§12.4), zur Laufzeit nicht benutzt
 ```
 
 - **Kein Build-Schritt.** Vanilla HTML/CSS/JS (ES2020), keine Abhängigkeiten. Die SVG-Konvertierung ist ein Handgriff beim Hinzufügen eines Icons. Ihr Ergebnis wird in `index.html` eingefügt und eingecheckt.
@@ -310,10 +313,10 @@ Sonnencreme und Regenjacke sind **keine** Hinweise, sie gehören zur Kleidung. J
 | Zustand | Bedingung | Anzeige |
 |---|---|---|
 | Setup | kein gültiger Standort gespeichert | Eltern-Screen: kurzer Text, Beispiel-URL, Button „Standort ermitteln“ (Text ok) |
-| Erstes Laden | Standort vorhanden, `aggregate()` aus dem Cache ergibt `null`, Request läuft | leere Slots, Temperatur leer, am Platz des Wetter-Icons ein pulsierender Punkt (`--ink-soft`) |
+| Erstes Laden | Standort vorhanden, `aggregate()` aus dem Cache ergibt `null`, Request läuft | leere Kleidungsfenster, kein Thermometer, am Platz des Wetter-Icons ein pulsierender Punkt |
 | Normal | `aggregate()` ≠ `null`, `fetchedAt` < 180 min alt | vollständige Empfehlung |
 | Veraltet | `aggregate()` ≠ `null`, `fetchedAt` ≥ 180 min alt | Empfehlung plus `i-sys-uhr` |
-| Fehler | `aggregate()` ergibt `null` (kein Cache, oder das Fenster liegt außerhalb der Daten, also nach ~40 h offline) und der Request ist fehlgeschlagen oder abgelaufen | leere Slots, Temperatur leer, `i-sys-fehler` am Platz des Wetter-Icons |
+| Fehler | `aggregate()` ergibt `null` (kein Cache, oder das Fenster liegt außerhalb der Daten, also nach ~40 h offline) und der Request ist fehlgeschlagen oder abgelaufen | leere Kleidungsfenster, kein Thermometer, `i-sys-fehler` am Platz des Wetter-Icons |
 
 ## 10. Aktualisierung
 
@@ -324,67 +327,88 @@ Sonnencreme und Regenjacke sind **keine** Hinweise, sie gehören zur Kleidung. J
 
 ## 11. Layout & Visuelles
 
+> **Überarbeitung v1.1 (2026-10-06):** Die Optik ist neu (siehe §17, Q36–Q40 und §14.1, A-16…A-20): größere Kleidung, ein Pixel-Thermometer statt der Linienleiste, Pixel-Art auch für Wetter, Hinweise und System, getönter Hintergrund je Wärmeband. Die Logik (`RULES`, `WX`, `recommend()`, `aggregate()`) ist unverändert.
+
 ### 11.1 Raster (iPhone 8, 375 × 667 pt, Viewport inkl. Statusleiste)
 
 ```
-┌───────────────────────────────────────────┐  Statusleiste 20 pt (safe-area-inset-top)
-│ [Wetter]  23°C           [H1] [H2] [⏱]    │  Wetterzeile 72 pt
-├──────┬─────────────────────────────┬──────┤  Abstand 8 pt
-│ [Z1] │          [ KOPF ]           │ ┌──┐ │
-│ [Z2] │                             │ │  │ │
-│ [Z3] │         [ OBERTEIL ]        │ │ ●│ │  Wärmeskala
-│      │                             │ │  │ │
-│      │           [ HOSE ]          │ │  │ │  4 × 136 pt
-│      │                             │ │  │ │
-│      │          [ SCHUHE ]         │ └──┘ │
-└──────┴─────────────────────────────┴──────┘  Rand unten 23 pt
- 16 | 56 pt |        247 pt         | 40 pt | 16
+┌───────────────────────────────────────────┐  Statusleiste 20 pt (liegt über dem Inhalt)
+│ [Wetter] [⏱]             [H1] [H2]        │  Kopfzeile y 22–70
+│                                   ☀       │
+│        [ KOPF ]                 ┌──┐      │  Fenster Kopf    y 70–152,5
+│                           ┌────┐│  │      │
+│       [ OBERTEIL ]        │22° ▶││▓▓│      │  Marker an der Flüssigkeitsoberfläche
+│                           └────┘│▓▓│      │
+│         [ HOSE ]                │▓▓│      │  Thermometer: Röhre 32 pt, Kugel 48 pt
+│                                 │▓▓│      │
+│        [ SCHUHE ]               └──┘      │
+│    [Z1] [Z2] [Z3]                ❄        │  Zubehör y 568–638, mittig zur Kleidung
+└───────────────────────────────────────────┘
 ```
 
-**Feste Maße in pt.** Alle Positionen und Größen sind Vielfache von 0,5 pt, also ganze Gerätepixel. Im Kleidungsraster gibt es keine `fr`-, `%`- oder `vh`-Größen, weil z. B. 559 / 4 = 139,75 pt Pixel-Art unscharf macht.
+**Feste Maße in pt.** Alle Positionen und Größen sind Vielfache von 0,5 pt, also ganze Gerätepixel. Jede Pixel-Art hat ein **ganzzahliges Pixelmaß** (ein Kunstpixel = ganze Gerätepixel). Im Kleidungsraster gibt es keine `fr`-, `%`- oder `vh`-Größen.
 
-| Element | x | y | Größe |
-|---|---|---|---|
-| Wetter-Icon | 16 | 32 | 48 × 48 (Line-Icon 24er Raster × 2) |
-| Temperatur | 76 | vertikal zentriert in 20–92 | Schrift §11.3 |
-| Hinweis H1, H2 | 235, 279 | 38 | 36 × 36 (× 1,5) |
-| Uhr ⏱ | 323 | 38 | 36 × 36 |
-| Kleidungs-Slot k (0…3) | 72 | 100 + 136·k | 247 × 136 |
-| Kleidungs-Icon in Slot k | 131,5 | 104 + 136·k | 128 × 128 (32er Raster × 4 pt) |
-| Zubehör-Icon k (0…2) | 20 | 104 + 56·k | 48 × 48 (32er Raster × 1,5 pt) |
-| Wärmeskala (Balken) | 327 | 100 | 24 × 544 |
+| Element | x | y | Größe | Pixelmaß |
+|---|---|---|---|---|
+| Wetter-Icon | 14 | 22 | 48 × 48 (16er Raster) | 3 pt |
+| Hinweis H1, H2 | 259, 313 | 22 | 48 × 48 (16er Raster) | 3 pt |
+| Uhr ⏱ („Daten alt“) | 68 | 30 | 32 × 32, neben dem Wetter-Icon | 2 pt |
+| Kleidungs-Fenster Kopf | 12 | 70 | 224 × 82,5, Teil unten ausgerichtet | 5,5 pt |
+| Kleidungs-Fenster Oberteil | 12 | 158 | 224 × 154, Teil mittig | 5,5 pt |
+| Kleidungs-Fenster Hose | 12 | 317,5 | 224 × 143, Teil oben ausgerichtet | 5,5 pt |
+| Kleidungs-Fenster Schuhe | 12 | 466 | 224 × 93,5, Teil oben ausgerichtet | 5,5 pt |
+| Zubehör (Reihe, bis zu 3) | 12 | 568 | 224 × 70, mittig, Abstand 10 pt, gemeinsame Standlinie unten | 3,5 pt (3 pt, wenn die Reihe sonst breiter als 224 pt wäre) |
+| Thermometer (SVG) | 216 | 64 | 160 × 600 | Zelle 4 pt |
 
-- Das Raster ist **fix**. Leere Slots bleiben leer, nichts rückt nach. Das gilt auch für H1, H2 und ⏱.
-- **Keine sichtbaren Slot-Rahmen.** Nur die Wärmeskala hat eine Kontur.
-- **Pixel-Art** (Kleidung, Zubehör): `shape-rendering="crispEdges"`, ganzzahlige Skalierung (4 pt = 8 px bzw. 1,5 pt = 3 px pro Kunstpixel).
-- **Line-Icons** (Wetter, Hinweise, System): normales Antialiasing, **kein** `crispEdges` (es würde runde Striche zerreißen). Farbe über `stroke="currentColor"`.
+- **Die Fensterhöhen sind die größten Teile ihrer Art** (Kopf 15, Oberteil 28, Hose 26, Schuhe 17 Kunstpixel hoch). Jedes Kleidungs-Symbol hat eine enge `viewBox` um seinen Inhalt, das Script setzt `width` und `height` aus der `viewBox` mal Pixelmaß (`setPixelIcon`). Dadurch liegt jedes Teil ohne Leerrand im Fenster.
+- Das Raster ist **fix**. Leere Kleidungsfenster bleiben leer, nichts rückt nach. Das gilt auch für H1, H2 und ⏱. Die Zubehörreihe ist die Ausnahme: sie ist eine Liste und steht immer **mittig** unter der Kleidung, auch bei 1 oder 2 Teilen (A-21).
+- **Keine sichtbaren Fenster-Rahmen.** Nur das Thermometer hat eine Kontur.
+- **Alles ist Pixel-Art** und hat `shape-rendering: crispEdges`. Es gibt keine Line-Icons mehr. Weil die Pixelmaße nebeneinander verschieden sind (5,5 / 4 / 3,5 / 3 / 2 pt), ist jedes für sich ganzzahlig (ein Vielfaches von 0,5 pt = ganze Gerätepixel).
+- Auf dem Hauptscreen steht **kein Text**. Die Temperatur ist ein Bild aus Pixelziffern (§11.2).
 
-### 11.2 Wärmeskala
+### 11.2 Thermometer
 
-- Vertikal, **oben warm, unten kalt**, abgerundeter Balken mit 2 pt Kontur in `--ink`, Radius 12 pt.
-- Anzahl der Segmente = Anzahl der Bänder (7). Trennlinien (1 pt, `--ink`) liegen an den Bandgrenzen, **proportional zur Temperatur**: `y = 100 + (scale.max − band.min) / (scale.max − scale.min) × 544`, gerundet auf 0,5 pt. Mit 30…−5 °C sind die Segmente gleich hoch (≈ 77,5 pt).
-- **Nur Linien, kein Farbverlauf** (A-09). Die Farbe kommt von den Kleidungs-Icons.
-- **Punkt stufenlos:** Kreis 16 pt, gefüllt in `--ink`, Mittelpunkt `x = 339`, `y = 108 + scalePos × 528`.
+Ein Pixel-Thermometer aus Röhre und Kugel, gezeichnet vom Script (`buildThermometer`, `renderThermo`) in einem SVG mit **Zellen von 4 pt**. Die Zellen stehen als Konstanten `TH` oben im Pixel-Block des Scripts.
+
+- **Form:** Röhre 8 Zellen (32 pt) breit, oben mit 2-Zellen-Abrundung, unten in eine runde Kugel (12 Zellen, 48 pt) übergehend. Die Kontur ist eine Zelle breit (`#8f8176`, ein mittleres Braungrau, damit das Thermometer die Kleidung nicht übertönt), das Glas `#fffdf7`. Die Kontur ist der Rand der Form, nicht gesondert gezeichnet.
+- **Skala:** von `scale.max` (30 °C, Zeile 10) bis `scale.min` (−5 °C, Zeile 136), 126 Zellen = 504 pt. Die Bandgrenzen liegen **proportional zur Temperatur** auf `Zeile = 10 + round((scale.max − band.min) / (scale.max − scale.min) × 126)`. Bei 30 … −5 °C sind die 7 Bänder gleich hoch (18 Zellen, 72 pt). Die Kugel ist die „Unterkante“ der Skala.
+- **Flüssigkeit:** pro Band eine Farbe (`BAND_LOOK[…].liquid`, rot oben … indigo unten). Gefüllt wird von der Oberfläche `Zeile = 10 + round(scalePos × 126)` bis zum Boden. Die Kugel ist immer gefüllt. Eine weiße 1-Zellen-Lichtkante links und eine dunkle rechts geben Rundung.
+- **Skala sichtbar:** Oberhalb der Oberfläche zeigt jedes Band seine Farbe blass (20 % Deckkraft). So ist die ganze Skala von Blau bis Rot immer zu sehen, und die Röhre wirkt nicht wie ein leerer Akku. Es gibt **keine Teilstriche und keine Ziffern**: Die Farbgrenzen sind die Bandgrenzen.
+- **Anker:** oben eine kleine Sonne (`i-wx-klar`, 24 pt, Pixelmaß 1,5 pt) als Endkappe der Skala, in der Kugel eine weiße Schneeflocke (`i-ui-flocke`, 33 pt). Die Sonne ist bewusst kleiner als das Wetter-Icon, damit sie nicht als Wetter gelesen wird.
+- **Marker:** eine Sprechblase links von der Röhre, deren Pfeil auf die Oberfläche zeigt. Sie ist 9 Zellen hoch und so breit wie der Text. Darin steht die Temperatur als **Pixelziffern** (3 × 5 Zellen, 4 pt pro Zelle, 20 pt hoch) in `--ink`. Format: `Math.round()`, dann `22°` (ohne „C“). Minusgrade mit echtem Minuszeichen (`−3°`, U+2212), nie `−0°`.
+- **Welche Zahl wohin:** Der Füllstand folgt `scalePos`, also der gefühlten Minimaltemperatur (Q10). Die Zahl im Marker ist die echte Temperatur (`tempDisplay`, Q11). Beide können um einige Grad abweichen, das war schon vorher so, nur lag die Zahl in der Kopfzeile.
+- **Ohne Daten** (Laden, Fehler): das Thermometer ist ausgeblendet, damit eine leere Röhre nicht als „eiskalt“ gelesen wird. Es bleiben nur das Wetter-Icon-Feld (Ladepunkt bzw. Fehler-Wolke) und der ruhige Hintergrund.
 - Reine Anzeige ohne Interaktion.
 
 ### 11.3 Farbe & Typografie
 
-Ein Styleguide liegt nicht vor. Die Werte sind aus der Palette der Icons abgeleitet (A-10):
+Die Werte sind aus der Palette der Icons abgeleitet (A-10, A-17). Außer der Temperatur im Marker gibt es keinen Text auf dem Hauptscreen, und es wird **keine Schrift** mehr geladen oder benutzt (die Ziffern sind Pixel). Nur der Setup-Screen für Eltern nutzt die Systemschrift.
 
 | Token | Wert | Verwendung |
 |---|---|---|
-| `--bg` | `#FAF7F0` | Hintergrund, fest, kein Dark Mode |
-| `--ink` | `#3B3632` | Temperatur, Line-Icons, Skala, Punkt |
-| `--ink-soft` | `rgba(59, 54, 50, 0.35)` | Ladeindikator, Platzhalter-Icons |
+| `--bg` | je Wärmeband, siehe unten. Ohne Daten und im Setup `#FAF7F0` | Hintergrund. `setTint(band)` setzt die Variable |
+| `--ink` | `#3B3632` | Pixelziffern, Setup-Screen |
+| `--ink-soft` | `rgba(59, 54, 50, 0.35)` | Platzhalter-Text im Setup-Screen. Der Ladepunkt ist ein pulsierender Kreis in `#a89d92` |
 
-- Temperatur in **echter Schrift**: `font-family: ui-rounded, -apple-system, system-ui, sans-serif`, 40 pt, Gewicht 600, `font-variant-numeric: tabular-nums`. Die Systemschrift wird nicht nachgeladen (A-11).
-- Format: `Math.round()`, dann `23°C`. Minusgrade mit echtem Minuszeichen (`−3°C`, U+2212), nie `−0°C`.
-- Außer der Temperatur gibt es keinen Text auf dem Hauptscreen.
+Hintergrund je Band (Position in `RULES.bands`, von warm nach kalt). Die Töne sind bewusst fast cremefarben, damit die Kleidung ihre Farbe behält:
+
+| Band (Reihenfolge) | `--bg` | Flüssigkeit |
+|---|---|---|
+| 1 heiss | `#FCEADB` | `#e8685a` |
+| 2 warm | `#FCF1DC` | `#f2a65a` |
+| 3 mild | `#F8F4E5` | `#e9d46a` |
+| 4 kuehl | `#EFF3EC` | `#9ccf8e` |
+| 5 kalt | `#E9F1F2` | `#7fc4d6` |
+| 6 eisig | `#E3EEF6` | `#6aa0dc` |
+| 7 frost | `#DDE8F5` | `#5b6fc4` |
+
+Die Zuordnung hängt an der **Position** des Bands, nicht an der ID. Hat `RULES.bands` eine andere Länge, wird auf die 7 Einträge von `BAND_LOOK` verteilt.
+
 - **Homescreen-Icon** `icon-180.png`: das T-Shirt-Pixel-Art × 5 (160 px) mittig auf `#FAF7F0`, 180 × 180, ohne Transparenz (A-12).
 
 ## 12. Icon-Inventar
 
-Symbol-IDs: `i-<slot>-<name>` mit den Slots `top`, `bottom`, `shoes`, `head`, `acc`, `wx`, `hint`, `sys`. **Alle vorhandenen Icons kommen ins Sprite**, auch unbenutzte, damit ein Tausch nur `RULES` betrifft (≈ 1,5 KB pro Icon).
+Symbol-IDs: `i-<slot>-<name>` mit den Slots `top`, `bottom`, `shoes`, `head`, `acc`, `wx`, `hint`, `sys`. Dazu `i-ui-*` für Bausteine des Thermometers. **Alle vorhandenen Icons kommen ins Sprite**, auch unbenutzte, damit ein Tausch nur `RULES` betrifft (≈ 1,5 KB pro Icon).
 
 ### 12.1 Konvertierung (T7)
 
@@ -394,75 +418,67 @@ Die Quell-SVGs sind so nicht einbettbar: 477 KB für 19 Kleidungs-Icons (§18, P
 3. Pixel pro Farbe zu einem `<path>` zusammenfassen (horizontale Läufe)
 4. Als `<symbol id="…" viewBox="0 0 32 32">` ausgeben, Farben kleingeschrieben
 
-Gemessen ergibt das ≈ 28 KB für alle 19 Kleidungs-Icons. Line-Icons werden nur umbenannt, `stroke="black"` wird zu `currentColor`.
+Gemessen ergibt das ≈ 28 KB für alle 19 Kleidungs-Icons. Danach läuft `tools/pixel_icons.py` (§12.4), das jedem Kleidungs-Symbol eine **enge `viewBox`** um den sichtbaren Inhalt gibt (z. B. `2 3 28 26` beim T-Shirt). Die Pfade selbst bleiben unverändert.
 
-### 12.2 Kleidung & Zubehör (Pixel-Art, 32 × 32)
+### 12.2 Kleidung & Zubehör (Pixel-Art)
 
-| Symbol-ID | Quelldatei (`clothes/`) | verwendet in | Status |
+| Symbol-ID | Quelle | verwendet in | Status |
 |---|---|---|---|
-| `i-top-tshirt` | `t-shirt_blau_32x32 2.svg` | heiss, warm | ✅ |
+| `i-top-tshirt` | `t-shirt_blau_32x32.svg` | heiss, warm | ✅ |
 | `i-top-longsleeve` | `longsleeve_oliv-gestreift_32x32.svg` | mild | ✅ |
 | `i-top-strickjacke` | `strickjacke_mauve_32x32.svg` | – (Alternative mild, A-02) | ✅ |
 | `i-top-pullover` | `pullover_gelb_32x32.svg` | – (nie äußerstes Teil, P-08) | ✅ |
-| `i-top-kapuzenpullover` | `kapuzenpullover_gelb_32x32.svg` | – (Alternative Wind, A-04) | ✅ |
+| `i-top-kapuzenpullover` | `kapuzenpullover_gelb_32x32.svg` | – (Alternative Wind, A-04). Silhouette der Regenjacke | ✅ |
 | `i-top-teddyjacke` | `teddyjacke_creme_32x32.svg` | kuehl | ✅ |
-| `i-top-kapuzenjacke` | `kapuzenjacke_pink_32x32 1.svg` | Wind-Override | ⚠️ Stilbruch, neu zeichnen (P-04) |
+| `i-top-kapuzenjacke` | `kapuzenjacke_pink_32x32.svg` | Wind-Override | ⚠️ Stilbruch (dunkle Kontur), neu zeichnen (P-04) |
 | `i-top-winterjacke` | `winterjacke_rot_32x32.svg` | kalt, eisig | ✅ |
 | `i-top-schneeanzug` | `schneeanzug_blauviolett_32x32.svg` | frost, Schnee-Override | ✅ |
-| `i-top-regenjacke` | – | Regen-Override | ⏳ Platzhalter: Kapuzenjacke |
-| `i-bottom-hose-kurz` | `hose-kurz_khaki_32x32.svg` | heiss, warm | ✅ |
+| `i-top-regenjacke` | `tools/pixel_icons.py` | Regen-Override | ✅ gelb, Kapuze, Reißverschluss, Taschen |
+| `i-bottom-hose-kurz` | `hose-kurz_khaki_32x32.svg` | heiss, warm | ✅ plus zwei Beine in Hautfarbe, damit zwischen Hose und Schuh keine Lücke bleibt (gleich hoch wie die lange Hose) |
 | `i-bottom-hose-lang` | `hose-lang_denim_32x32.svg` | mild … frost | ✅ |
-| `i-shoes-sandalen` | `sandalen_orange_32x32.svg` | heiss | ✅ |
-| `i-shoes-sneaker` | `sneaker_weiss_32x32.svg` | warm … kalt | ✅ |
+| `i-shoes-sandalen` | `tools/pixel_icons.py` | heiss | ✅ neu: offene Sandale mit Fuß und drei Riemen (die alte Grafik wirkte wie ein Hut) |
+| `i-shoes-sneaker` | `sneaker_weiss_32x32.svg` | warm … kalt | ✅ Umfärbung: weißer, mit dunklerer Kontur und Sohle (zu wenig Kontrast zum Hintergrund) |
 | `i-shoes-gummistiefel` | `gummistiefel_gelb_32x32.svg` | Regen-Override | ✅ |
 | `i-shoes-winterstiefel` | `winterstiefel_braun_32x32.svg` | eisig, frost, Schnee | ✅ |
 | `i-head-muetze` | `muetze_rot_32x32.svg` | kalt, eisig, frost | ✅ |
-| `i-head-sonnenhut` | `sonnenhut_stroh_32x32.svg` | UV ≥ 3 | ✅ |
-| `i-acc-schal` | `schal_petrol_32x32.svg` | eisig, frost | ✅ |
+| `i-head-sonnenhut` | `tools/pixel_icons.py` | UV ≥ 3 | ✅ **Basecap** (grün, Schirm nach rechts). Die ID bleibt, weil `RULES.sun.head` sie nennt (A-16) |
+| `i-acc-schal` | `tools/pixel_icons.py` | eisig, frost | ✅ neu: gestreifter Schal mit Wickel, zwei Enden und Fransen (der alte Bogen wirkte wie ein Kopfhörer) |
 | `i-acc-sonnenbrille` | `sonnenbrille_koralle_32x32.svg` | UV ≥ 8 | ✅ |
-| `i-acc-handschuhe` | – | kalt, eisig, frost | ⏳ Platzhalter: gestricheltes Quadrat |
-| `i-acc-sonnencreme` | – | UV ≥ 3 | ⏳ Platzhalter: gestricheltes Quadrat |
+| `i-acc-handschuhe` | `tools/pixel_icons.py` | kalt, eisig, frost | ✅ Paar Fäustlinge, senffarben |
+| `i-acc-sonnencreme` | `tools/pixel_icons.py` | UV ≥ 3 | ✅ orange Flasche mit großer Sonne auf dem Etikett |
 
-Falls die pinke Kapuzenjacke in Wirklichkeit die Regenjacke ist, wird sie zu `i-top-regenjacke` umbenannt, und der Wind-Override nimmt den Kapuzenpullover.
+Die alten Grafiken von Sonnenhut, Schal und Sandalen (`assets/clothes/…`) bleiben als Quellen im Repo, sind aber nicht mehr im Sprite.
 
-### 12.3 Wetter, Hinweise, System (Line-Icons, 24 × 24, 2er Strich, runde Enden)
+### 12.3 Wetter, Hinweise, System (Pixel-Art, 16 × 16)
 
-| Symbol-ID | Quelldatei (`icons/`) | Status |
-|---|---|---|
-| `i-wx-klar` | `weather-icons-7.svg` (Sonne) | ✅ |
-| `i-wx-klar-nacht` | `weather-icons-4.svg` (Mond) | ✅ |
-| `i-wx-teilweise` | `weather-icons-3.svg` (Sonne hinter Wolke) | ✅ |
-| `i-wx-bedeckt` | `weather-icons.svg` (Wolke) | ✅ |
-| `i-wx-nebel` | – | ⏳ Platzhalter: Wolke |
-| `i-wx-niesel` | `weather-icons-2.svg` (Wolke mit Punkten) | ✅ |
-| `i-wx-regen` | `weather-icons-1.svg` (Wolke mit Strichen) | ✅ |
-| `i-wx-schnee` | `weather-icons-5.svg` (Schneeflocke) | ✅ |
-| `i-wx-gewitter` | – | ⏳ Platzhalter: Regenwolke |
-| `i-hint-wind` | `weather-icons-11.svg` (Wind) | ✅ |
-| `i-hint-glaette` | – | ⏳ Platzhalter: Thermometer (`weather-icons-9.svg`) |
-| `i-sys-uhr` | – | ⏳ Platzhalter: einfache Uhr (§12.4) |
-| `i-sys-fehler` | – | ⏳ Platzhalter: Warnkreis (§12.4) |
-| (unbenutzt) | `weather-icons-6.svg` (Funkeln), `-8` (Sonnenauf-/untergang), `-10` (Schirm) | – |
+Alle gezeichnet in `tools/pixel_icons.py`, Konturen dunkler als die Füllung (wie bei der Kleidung), keine schwarzen Striche mehr. Der Inhalt jedes Icons wird in der 16 × 16 Fläche zentriert. Pixelmaß 3 pt (Wetter, Hinweise), 2 pt (Uhr).
 
-Fehlende Line-Icons möglichst aus **demselben Icon-Set** nehmen (Wolke mit Blitz, Wolke mit Nebel, Uhr, Wolke durchgestrichen oder Warnkreis), damit Strichstärke und Stil passen.
+| Symbol-ID | Motiv |
+|---|---|
+| `i-wx-klar` | Sonne mit 8 Strahlen. Auch der obere Anker des Thermometers |
+| `i-wx-klar-nacht` | Mondsichel mit zwei Sternen |
+| `i-wx-teilweise` | Sonne hinter Wolke |
+| `i-wx-bedeckt` | zwei Wolken, die hintere grau |
+| `i-wx-nebel` | graue Wolke mit drei Nebelstreifen |
+| `i-wx-niesel` | Wolke mit drei kleinen hellblauen Tropfen |
+| `i-wx-regen` | graue Wolke mit blauen Tropfen |
+| `i-wx-schnee` | Wolke mit Schneeflocken |
+| `i-wx-gewitter` | dunkle Wolke mit gelbem Blitz |
+| `i-hint-wind` | drei Windbahnen mit Kringeln |
+| `i-hint-glaette` | Stiefel auf einer Eisplatte mit Bewegungsstrichen: rutschig |
+| `i-sys-uhr` | kleine Uhr in weichem Grau, ein Hinweis für Erwachsene |
+| `i-sys-fehler` | ruhige Wolke mit Fragezeichen (ein Erwachsener soll nachsehen), kein rotes Warnzeichen |
+| `i-ui-flocke` | weiße Schneeflocke (11 × 11), Baustein in der Thermometerkugel |
 
-### 12.4 Platzhalter
+Die ursprünglichen Line-Icons (`assets/icons/*.svg`) bleiben als Quellen im Repo, sind aber nicht mehr im Sprite.
 
-v1 startet mit Platzhaltern (Q34). Jede ⏳-ID existiert von Anfang an als `<symbol>` mit dem Attribut `data-placeholder`. So prüft AC-12 die IDs sofort, und eine nachgelieferte Grafik ersetzt nur den Inhalt des Symbols. Wo es ein inhaltlich passendes Icon gibt, verweist der Platzhalter darauf, damit das Kind etwas Sinnvolles sieht:
+### 12.4 `tools/pixel_icons.py`
 
-| ID | Platzhalter | Umsetzung |
-|---|---|---|
-| `i-top-regenjacke` | Kapuzenjacke | `<symbol id="i-top-regenjacke" viewBox="0 0 32 32" data-placeholder><use href="#i-top-kapuzenjacke"/></symbol>` |
-| `i-wx-nebel` | Wolke | `<use href="#i-wx-bedeckt"/>` |
-| `i-wx-gewitter` | Regenwolke | `<use href="#i-wx-regen"/>` |
-| `i-hint-glaette` | Thermometer | Pfade aus `weather-icons-9.svg` kopiert |
-| `i-sys-uhr` | Uhr | `<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>` im Strichstil des Sets (2er Strich, runde Enden, `currentColor`) |
-| `i-sys-fehler` | Warnkreis | `<circle cx="12" cy="12" r="10"/><path d="M12 7v6M12 17h.01"/>` im selben Strichstil |
-| `i-acc-handschuhe`, `i-acc-sonnencreme` | gestricheltes, abgerundetes Quadrat in `--ink-soft` | kein passendes Ersatz-Icon vorhanden |
+Das Skript ist die Quelle der selbst gezeichneten Icons (Wetter, Hinweise, System, Basecap, Handschuhe, Sonnencreme, Regenjacke, Schneeflocke). Es zeichnet in Code (Formen mit automatischer Kontur und Schatten, dazu ein paar Handpixel), setzt die engen `viewBox`en aller Kleidungs-Symbole und **schreibt die Symbole direkt in das Sprite von `index.html`**. Es ist idempotent: vorhandene Symbole derselben ID werden ersetzt. `python3 tools/pixel_icons.py --preview vorschau.html` erzeugt zusätzlich einen Kontaktbogen aller Symbole.
 
-- Solange die Regenjacke fehlt, zeigen Wind und Regen dieselbe Jacke. Der Regen ist trotzdem an den Gummistiefeln erkennbar.
-- Handschuhe und Sonnencreme sind als Erstes nachzuliefern, weil das Kind bei ihnen nur ein leeres Kästchen sieht.
-- `?test` listet verbleibende Platzhalter als **Warnung**, nicht als Fehler.
+- Ein Icon ändern: die Zeichenfunktion im Skript anpassen, Skript laufen lassen, `CACHE_VERSION` in `sw.js` erhöhen.
+- Ein Icon durch eigene Grafik ersetzen: in `index.html` nur den Inhalt des `<symbol>` tauschen. Bei Kleidung dazu `viewBox` auf den Inhalt kürzen (das Skript erledigt das beim nächsten Lauf für alle).
+- Platzhalter (`data-placeholder`) gibt es nicht mehr. `?test` warnt weiterhin, falls einer auftaucht.
 
 ## 13. Debug- & Test-Modus
 
@@ -513,13 +529,19 @@ Die IDs heißen weiter `A-xx`, weil die Spec an vielen Stellen darauf verweist. 
 | A-06 | Schnee: ≥ 0,2 cm Neuschnee ODER ≥ 2 cm Schneedecke. Schnee gewinnt immer, auch über 0 °C | Schneematsch → Winterstiefel. Liegender Schnee am Morgen danach zählt auch |
 | A-07 | Glätte: gefrierender Regen ODER (≤ 1 °C UND nass im Fenster oder 6 h davor) | typischer Fall ist Nässe vom Vorabend, die morgens friert |
 | A-08 | Zubehör-Reihenfolge: Sonnencreme, Handschuhe, Schal, Sonnenbrille | greift nur bei 4 Teilen gleichzeitig (UV ≥ 8 bei ≤ 4 °C), praktisch nie |
-| A-09 | Skala 30 … −5 °C, nur Linien | ergibt 7 gleich hohe Segmente, wie in der Skizze |
-| A-10 | Farben `#FAF7F0` / `#3B3632` | kein Styleguide vorhanden |
-| A-11 | Schrift `ui-rounded` 600, 40 pt | passt zu den runden Line-Icons |
+| A-09 | Skala 30 … −5 °C | ergibt 7 gleich hohe Bänder. „Nur Linien“ ist seit v1.1 überholt (A-18) |
+| A-10 | Farben `#FAF7F0` / `#3B3632` | kein Styleguide vorhanden. Der Hintergrund ist seit v1.1 je Band getönt (A-19) |
+| A-11 | Schrift `ui-rounded` 600, 40 pt | überholt in v1.1: Pixelziffern (A-17) |
 | A-12 | Homescreen-Icon = T-Shirt | eindeutigstes Motiv |
 | A-13 | Auto-Sperre 2 min | 30 s reichen zum Anziehen nicht |
 | A-14 | Nachts: Mond statt Sonne, Wolke statt Sonne-mit-Wolke | Mond-Icon vorhanden, im Winter ist es morgens dunkel |
 | A-15 | Unter 0 °C: Schneeanzug im Oberteil-Slot, im Hose-Slot weiter die lange Hose | Q5 gilt nur fürs Oberteil. Das Kind sieht, dass drunter eine Hose gehört |
+| A-16 | Der Sonnenhut ist eine **Basecap** (Wunsch von Jana, 2026-10-06). Die ID `i-head-sonnenhut` und `RULES.sun.head` bleiben | die Regel ändert sich nicht, nur die Grafik. Ein Umbenennen würde `RULES` anfassen |
+| A-17 | Die Temperatur steht als **Pixelziffern in einer Sprechblase am Thermometer**, ohne „C“, 20 pt hoch (vorher 40 pt Schrift in der Kopfzeile) | Zahl und Füllstand gehören zusammen. Kleiner und ruhiger. Das „C“ ist in Deutschland selbstverständlich |
+| A-18 | Das Thermometer hat farbige Flüssigkeit je Band, Sonne oben, Schneeflocke in der Kugel, Teilstriche **ohne Ziffern** | Das Kind soll „warm = hoch und rot, kalt = tief und blau“ lernen. Ziffern an der Skala würden zeigen, dass Füllstand (gefühlt) und Zahl (echt) um einige Grad abweichen |
+| A-19 | Der Hintergrund ist je Wärmeband **leicht getönt** (pfirsich bis eisblau) | verstärkt die Lektion, ohne Text. Fast cremefarben, damit die Kleidungsfarben stimmen |
+| A-20 | Alle Icons sind **Pixel-Art** in einem Stil (Kontur dunkler als die Füllung). Regenjacke, Handschuhe, Sonnencreme und die fünf fehlenden Wetter-/System-Icons sind gezeichnet | ersetzt die schwarzen Line-Icons und alle Platzhalter (O-3 erledigt) |
+| A-21 | Das Zubehör steht als **mittige Reihe** unter der Kleidung (3,5 pt pro Kunstpixel), nicht mehr als Spalte links. Die Reihe zentriert sich auch bei 1 oder 2 Teilen | die Spalte war winzig und lag am Rand. Die Reihe ist eine Liste, die Kleidungsfenster bleiben fix |
 
 ### 14.2 Von Jana geklärt
 
@@ -527,7 +549,7 @@ Die IDs heißen weiter `A-xx`, weil die Spec an vielen Stellen darauf verweist. 
 |---|---|---|
 | O-1 | iOS-Version | iOS 16 |
 | O-2 | Lizenz des Line-Icon-Sets | für den persönlichen Gebrauch frei, das reicht (Q33) |
-| O-3 | Fehlende Grafiken: Regenjacke, Handschuhe, Sonnencreme (Pixel-Art); Nebel, Gewitter, Glätte, Uhr, Fehler (Line); Kapuzenjacke ohne Kontur neu | Start mit Platzhaltern (§12.4). Grafiken kommen später (T7a), sie blockieren nichts |
+| O-3 | Fehlende Grafiken: Regenjacke, Handschuhe, Sonnencreme (Pixel-Art); Nebel, Gewitter, Glätte, Uhr, Fehler (Line); Kapuzenjacke ohne Kontur neu | v1.0: Start mit Platzhaltern. **v1.1: alle gezeichnet** (A-20), nur die Kapuzenjacke ohne Kontur steht noch aus |
 
 ### 14.3 Verbleib der v0.1-Punkte
 
@@ -563,17 +585,18 @@ Die IDs heißen weiter `A-xx`, weil die Spec an vielen Stellen darauf verweist. 
 - **AC-6** `?debug&felt=22&uv=3` zeigt Sonnencreme und Sonnenhut, mit `uv=8` zusätzlich die Sonnenbrille. `?debug&felt=3&uv=5` zeigt die Mütze (kein Sonnenhut) und die Sonnencreme.
 - **AC-7** `?debug&felt=12&rain=80&rainsum=2` zeigt Regenjacke und Gummistiefel, mit zusätzlich `snow=1` Schneeanzug und Winterstiefel. `?debug&felt=3&rain=80&rainsum=2` behält Winterjacke und Winterstiefel.
 - **AC-8** Es werden nie mehr als 3 Zubehör-Icons und nie mehr als 2 Hinweis-Icons angezeigt.
-- **AC-9** Leere Slots verändern die Position der übrigen Slots nicht.
-- **AC-10** Der Skalenpunkt liegt bei `felt=30` ganz oben und bei `felt=-5` ganz unten, dazwischen linear. Werte außerhalb werden begrenzt.
+- **AC-9** Leere Kleidungsfenster verändern die Position der übrigen Fenster nicht. Die Zubehörreihe ist mittig zentriert (A-21).
+- **AC-10** Die Flüssigkeitsoberfläche (und der Marker) liegt bei `felt=30` ganz oben in der Röhre und bei `felt=-5` am unteren Ende der Skala (Übergang zur Kugel), dazwischen linear. Werte außerhalb werden begrenzt. (Logik: `scalePos`, 4 `?test`-Fälle.)
 - **AC-11** Im Flugmodus zeigt die App nach vorherigem Laden den letzten Stand, mit dem Fenster neu relativ zur aktuellen Uhrzeit berechnet. Mit `?debug&age=180` erscheint das Uhr-Icon.
 - **AC-12** `?test` prüft, dass jede in `RULES`, `WX`, Hinweisen und System referenzierte Icon-ID als `<symbol>` existiert.
-- **AC-13** Pixel-Art-Icons erscheinen auf dem iPhone 8 ohne weiche Kanten, Line-Icons ohne ausgefranste Striche (Sichtprüfung).
+- **AC-13** Alle Icons, das Thermometer und die Pixelziffern erscheinen auf dem iPhone 8 ohne weiche Kanten (Sichtprüfung).
 - **AC-14** Nach dem Aufwecken werden die Daten neu geladen, ohne Nutzeraktion. Es gibt höchstens einen Abruf pro Aufwecken.
 - **AC-15** `index.html` + `sw.js` + `manifest.json` sind zusammen < 150 KB (unkomprimiert).
 - **AC-16** `?debug&felt=17&gust=55` zeigt die Kapuzenjacke und das Wind-Icon. `?debug&felt=27&gust=55` behält das T-Shirt und zeigt das Wind-Icon.
 - **AC-17** `?debug&felt=-1&tmin=0&wet=0.5` zeigt das Glätte-Icon, ebenso `?debug&code=66`.
 - **AC-18** Nach einem Deploy mit neuer `CACHE_VERSION` läuft spätestens nach dem zweiten Aufwecken die neue Version.
-- **AC-19** `?test` meldet keine Fehler. Warnungen für Platzhalter sind erlaubt.
+- **AC-19** `?test` meldet keine Fehler. Seit v1.1 gibt es keine Platzhalter mehr, also auch keine Warnungen.
+- **AC-20** Der Marker liegt in jedem Zustand links von der Röhre und überdeckt keine Kleidung (Sichtprüfung bei `?debug&temp=29`, `?debug&temp=-12`). Mit `?debug&temp=…` bleiben Kleidungsteile und Zubehör in ihren festen Fenstern.
 
 ## 16. Tasks
 
@@ -584,14 +607,15 @@ Die IDs heißen weiter `A-xx`, weil die Spec an vielen Stellen darauf verweist. 
 | T3 | Open-Meteo-Abruf (Timeout), `aggregate()` → `Conditions` inkl. Index-Versatz und `null` | T1 |
 | T4 | `RULES`, `WX` und reine Funktion `recommend()` | – |
 | T5 | `?test`-Modus: Fälle für `recommend()`, `aggregate()` mit Beispiel-Antwort, Icon-Existenz | T3, T4, T7 |
-| T6 | Layout-Raster mit festen Maßen, Slots, Wärmeskala mit Punkt | – |
-| T7 | `tools/svg2symbol`, Sprite zusammenstellen, IDs nach §12, Platzhalter nach §12.4 | T1 |
-| T7a | Später, blockiert nichts: fehlende Grafiken und die Kapuzenjacke ohne Kontur nachliefern, zuerst Handschuhe und Sonnencreme. Nur den Inhalt des Symbols tauschen, `data-placeholder` entfernen, `CACHE_VERSION` erhöhen | – |
+| T6 | Layout-Raster mit festen Maßen, Slots, Thermometer mit Marker (v1.1) | – |
+| T7 | `tools/svg2symbol`, Sprite zusammenstellen, IDs nach §12. v1.0: Platzhalter. Ab v1.1: alle Icons gezeichnet mit `tools/pixel_icons.py` (§12.4) | T1 |
+| T7a | **Erledigt in v1.1** bis auf die Kapuzenjacke ohne Kontur: alle Platzhalter sind gezeichnet (`tools/pixel_icons.py`). Die Kapuzenjacke bleibt offen und blockiert nichts | – |
 | T8 | Wetterzeile: Icon-Mapping inkl. Nacht, Hinweise, Uhr | T3, T7 |
 | T9 | Zustände (Setup inkl. Geolocation-Button, Laden, Veraltet, Fehler) und Caching | T3 |
 | T10 | Aktualisierung (Aufwecken, 30 min, Entprellen) und SW-Update-Ablauf | T3 |
 | T11 | Debug-Modus mit Overlay | T4 |
 | T12 | Test auf dem Gerät: alle ACs. Danach eine Woche Alltagstest, Schwellen in `RULES` nachjustieren (P-17) | alles |
+| T13 | **v1.1** Visuelle Überarbeitung: Layout, Thermometer, Icons, Farben. Auf Branch `visual-refresh`, auf dem Gerät noch zu prüfen (AC-13, AC-20) | T12 |
 
 ## 17. Entscheidungslog
 
@@ -609,14 +633,14 @@ Die IDs heißen weiter `A-xx`, weil die Spec an vielen Stellen darauf verweist. 
 | Q10 | Rollierendes 4-h-Fenster: Kleidung nach der kältesten Stunde, Regen und UV nach dem Maximum. |
 | Q11 | Die Bänder richten sich nach der gefühlten Temperatur, angezeigt wird die echte. |
 | Q12 | Die Wetterzeile zeigt Fakten, der Zubehör-Slot zeigt Dinge zum Mitnehmen. |
-| Q13 | Das Zubehör steht als Spalte links, gespiegelt zur Skala rechts. |
+| Q13 | Das Zubehör steht als Spalte links, gespiegelt zur Skala rechts. *(v1.1: überholt durch Q37)* |
 | Q14 | GitHub Pages, der Standort kommt per URL in localStorage. |
 | Q15 | Neu laden beim Aufwecken und alle 30 min. Offline bleibt der letzte Stand, ab 3 h mit Uhr-Icon. Normale Auto-Sperre. |
 | Q16 | Auf dem Hauptscreen steht nur die Temperatur als Zahl, sonst Icons. |
 | Q17 | Das Raster ist fix, leere Slots bleiben leer. |
-| Q18 | Der Skalenpunkt sitzt stufenlos. |
+| Q18 | Der Skalenpunkt sitzt stufenlos. *(v1.1: der Füllstand springt in 4-pt-Stufen, das ist unmerklich fein, Q38)* |
 | Q19 | Kein Build-Schritt, Sprite inline, Logik-Block oben im Script. |
-| Q20 | Off-white Hintergrund, echte Schrift, keine sichtbaren Slot-Rahmen. |
+| Q20 | Off-white Hintergrund, echte Schrift, keine sichtbaren Slot-Rahmen. *(v1.1: Hintergrund getönt und Pixelziffern, Q39)* |
 | Q21 | Es gibt einen Debug-Modus per URL. |
 | Q22 | Bänder und Outfits kommen aus der Temperatur-Tabelle der Logik-Datei. Mehrdeutige Zellen sind als A-01…03 und A-15 entschieden. |
 | Q23 | Sonnenschutz nach den UV-Stufen der Logik-Datei: ab 3 Creme und Hut, ab 8 Brille. Kein Schirm. |
@@ -624,14 +648,19 @@ Die IDs heißen weiter `A-xx`, weil die Spec an vielen Stellen darauf verweist. 
 | Q25 | Gewitter ist kein Hinweis, das Wetter-Icon zeigt es bereits. |
 | Q26 | Schnee gewinnt bei Oberteil und Schuhen, auch über 0 °C. Liegender Schnee zählt. |
 | Q27 | Gecacht wird die Rohantwort. Das Fenster wird immer relativ zur aktuellen Uhrzeit neu berechnet, „veraltet“ heißt Abruf ≥ 3 h her (präzisiert Q15). |
-| Q28 | Kleidung und Zubehör sind Pixel-Art (crisp), Wetter, Hinweise und System sind Line-Icons (weich). |
+| Q28 | Kleidung und Zubehör sind Pixel-Art (crisp), Wetter, Hinweise und System sind Line-Icons (weich). *(v1.1: alles Pixel-Art, Q40)* |
 | Q29 | Setup zusätzlich per Geolocation-Button, Koordinaten auf 2 Nachkommastellen gerundet. |
 | Q30 | Tests laufen im Browser per `?test`, ohne Test-Framework. |
 | Q31 | Die Logik-Datei ist für Kleidungsregeln maßgeblich, die Spec für Gerät und Verhalten. Deren „Nächste Schritte“ (Auto-Lock aus, kein Homescreen) sind überholt. |
 | Q32 | Zielsystem ist iOS 16. |
 | Q33 | Das Line-Icon-Set ist für den persönlichen Gebrauch frei. Das reicht, auch im öffentlichen Repo. |
-| Q34 | v1 startet mit Platzhaltern. Wo möglich verweisen sie auf ein passendes vorhandenes Icon (§12.4). |
+| Q34 | v1 startet mit Platzhaltern. Wo möglich verweisen sie auf ein passendes vorhandenes Icon. *(v1.1: alle gezeichnet, Q40, §12.4)* |
 | Q35 | Alle Entscheidungen A-01…A-15 sind bestätigt. |
+| Q36 | v1.1: Das Thermometer soll dem Kind zeigen, wie Temperatur funktioniert. Es zeigt nur „warm gegen kalt“ (Sonne oben, Schneeflocke unten, Farbe, Füllstand), keine Mini-Kleidung je Band. |
+| Q37 | v1.1: Die Kleidung steht größer (5,5 pt pro Kunstpixel statt 4 pt) in einer Spalte, das Zubehör als Reihe darunter (3 pt statt 1,5 pt). Kein Strichmännchen. |
+| Q38 | v1.1: Die Temperatur steht in einer Sprechblase am Thermometer, Pixelziffern, klein. Die Kopfzeile trägt nur Wetter-Icon und Hinweise. |
+| Q39 | v1.1: Der Hintergrund ist je Wärmeband dezent getönt. |
+| Q40 | v1.1: Alle Icons sind Pixel-Art. Die fehlenden Grafiken sind gezeichnet. Der Sonnenhut ist eine Basecap. Die Logik bleibt unverändert. Erst lokal auf einem Branch, nichts veröffentlicht. |
 
 ## 18. Prüfbericht v0.1 → v1.0
 
