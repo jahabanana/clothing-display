@@ -1,8 +1,10 @@
-# Kleidungs-Kiosk — Spec v1.1
+# Kleidungs-Kiosk — Spec v1.2
 
-> Status: **Final, bereit zur Umsetzung. Keine offenen Punkte.** Stand 2026-09-21. Alle `OFFEN`-Punkte aus v0.1 sind entschieden. Wo die Logik-Datei oder die Assets keine Antwort hergaben, gilt eine Entscheidung `A-xx`. Jana hat alle bestätigt (Liste in [§14](#14-entscheidungen-und-erledigte-punkte)). Jede lässt sich später über `RULES` oder ein Asset ändern, ohne die Spec anzufassen. Fehlende Grafiken starten als Platzhalter (§12.4). Die Unterschiede zwischen v0.1, der Logik-Datei und den Dateien im Ordner stehen im Prüfbericht in [§18](#18-prüfbericht-v01--v10). v0.1 liegt als `kleidungs-kiosk-spec.v0.1.md` daneben.
+> Status: **Final, bereit zur Umsetzung. Keine offenen Punkte.** Stand 2026-10-07 (v1.2, Grundlage v1.0 vom 2026-09-21). Alle `OFFEN`-Punkte aus v0.1 sind entschieden. Wo die Logik-Datei oder die Assets keine Antwort hergaben, gilt eine Entscheidung `A-xx`. Jana hat alle bestätigt (Liste in [§14](#14-entscheidungen-und-erledigte-punkte)). Jede lässt sich später über `RULES` oder ein Asset ändern, ohne die Spec anzufassen. Fehlende Grafiken starten als Platzhalter (§12.4). Die Unterschiede zwischen v0.1, der Logik-Datei und den Dateien im Ordner stehen im Prüfbericht in [§18](#18-prüfbericht-v01--v10). v0.1 liegt als `kleidungs-kiosk-spec.v0.1.md` daneben.
 >
 > **v1.1 (2026-10-06): visuelle Überarbeitung.** Layout, Thermometer, Farben und alle Icons sind neu gestaltet (§11, §12, Entscheidungen A-16…A-20, Q36…Q40). Die Logik (§5–§10, `RULES`, `WX`) ist unverändert, ebenso Zustände, Aktualisierung und Debug-/Test-Modus.
+>
+> **v1.2 (2026-10-06): Regeln, Farben, drinnen/draußen.** Sonnenschutz hat je Band eine eigene UV-Schwelle (A-22), Schnee wirkt nur dort, wo er fällt, mit Schneejacke und Schneehose (A-23), bei Regen in der Kälte trägt das Kind eine Matschhose (A-24). Jedes Teil kann Farbvarianten haben, die die App je Tag wechselt (A-25). Zwei Umschalter links im Bild zeigen die Grundkleidung „drinnen“ (A-26). Die Schuhe sind ein Paar, die Farben folgen Janas echten Kleidungsstücken (A-27). Die Wetterdaten und die Aggregation (§5, §6, §8, §9, §10) sind unverändert.
 >
 > Quellen: `Kleidungs-Kiosk Wetter-Kleidungslogik.md` (2026-09-17), `clothes/` (19 SVGs), `icons/` (12 SVGs). Ein Styleguide liegt nicht vor.
 
@@ -23,9 +25,9 @@ Ein altes iPhone 8 hängt als Single-Purpose-Kiosk im Flur. Beim Aufwecken zeigt
 
 **Out of Scope (v1)**
 - Mehrere Screens oder Tabs (Nachmittag, Morgen). Das Layout soll die Erweiterung aber nicht verbauen.
-- Schichten-Darstellung. Beim Oberteil wird nur das äußerste Teil gezeigt.
+- Mehrere Schichten übereinander. Pro Ansicht wird je Fenster nur ein Teil gezeigt (draußen das äußerste, drinnen die Grundkleidung, A-26).
 - Mehrere Kinder oder Profile
-- Interaktion auf dem Hauptscreen außer Aufwecken (keine Taps, nichts zum Verschieben). Der Setup-Screen für Eltern hat einen Button.
+- Interaktion auf dem Hauptscreen außer Aufwecken und den zwei Umschaltern drinnen/draußen (A-26). Nichts zum Verschieben. Der Setup-Screen für Eltern hat einen Button.
 - Server, Accounts, Build-Pipeline
 - Aus der Logik-Datei nicht darstellbar und daher weggelassen: Lichtschutzfaktor-Stufen, „Mittagssonne meiden“ (UV 6–7), „dicke“ Handschuhe, Thermohose. Es gibt je ein Icon für Sonnencreme, Handschuhe und lange Hose.
 
@@ -61,7 +63,10 @@ Ein altes iPhone 8 hängt als Single-Purpose-Kiosk im Flur. Beim Aufwecken zeigt
 /assets/clothes/*.svg  – Quell-SVGs, zur Laufzeit nicht benutzt
 /assets/icons/*.svg    – Quell-SVGs, zur Laufzeit nicht benutzt
 /tools/svg2symbol.*    – einmalige Asset-Konvertierung (§12.1), zur Laufzeit nicht benutzt
-/tools/pixel_icons.py  – zeichnet die Pixel-Icons und schreibt sie ins Sprite (§12.4), zur Laufzeit nicht benutzt
+/tools/pixel_icons.py  – schreibt alle Pixel-Icons ins Sprite (§12.4), zur Laufzeit nicht benutzt
+/overview.js, /tests.js – Übersichtsseite (?overview) und Testmodus (?test), werden nur dafür nachgeladen, zur Laufzeit nicht benutzt (§13)
+/tools/pxl.py          – Zeichenwerkzeug (Masken, Canvas, Symbol-Ausgabe, Vorschau-Bilder), zur Laufzeit nicht benutzt
+/tools/icons_schuhe_hosen.py, icons_oberteile.py, icons_kopf_zubehoer.py – die gezeichneten Raster samt Farbvarianten (§12.4)
 ```
 
 - **Kein Build-Schritt.** Vanilla HTML/CSS/JS (ES2020), keine Abhängigkeiten. Die SVG-Konvertierung ist ein Handgriff beim Hinzufügen eines Icons. Ihr Ergebnis wird in `index.html` eingefügt und eingecheckt.
@@ -197,40 +202,48 @@ Werte sind Icon-Namen ohne Präfix. Gerendert wird `i-<slot>-<name>` (§12).
 const RULES = {
   // Wärmebänder von warm nach kalt. min = untere Schwelle für feltMin in °C,
   // inklusiv, ungerundet. Quelle: Temperatur-Tabelle der Logik-Datei.
+  // in = was das Kind drinnen anhat (Ansicht „drinnen“: ohne Jacke, Mütze, Schuhe, Zubehör). top darf eine Liste sein:
+  //      die App wählt je Tag eines davon (Pullover und Kapuzenpullover machen keinen Unterschied, A-26).
+  // uvMin = eigene UV-Schwelle für Sonnencreme und Hut in diesem Band (sonst sun.uvMin).
   bands: [
-    { id: 'heiss', min:  25, head: null,     top: 'tshirt',      bottom: 'hose-kurz', shoes: 'sandalen',      acc: [] },
-    { id: 'warm',  min:  20, head: null,     top: 'tshirt',      bottom: 'hose-kurz', shoes: 'sneaker',       acc: [] },                    // A-01
-    { id: 'mild',  min:  15, head: null,     top: 'longsleeve',  bottom: 'hose-lang', shoes: 'sneaker',       acc: [] },                    // A-02
-    { id: 'kuehl', min:  10, head: null,     top: 'teddyjacke',  bottom: 'hose-lang', shoes: 'sneaker',       acc: [] },                    // A-03
-    { id: 'kalt',  min:   5, head: 'muetze', top: 'winterjacke', bottom: 'hose-lang', shoes: 'sneaker',       acc: ['handschuhe'] },
-    { id: 'eisig', min:   0, head: 'muetze', top: 'winterjacke', bottom: 'hose-lang', shoes: 'winterstiefel', acc: ['handschuhe', 'schal'] },
-    { id: 'frost', min: -Infinity, head: 'muetze', top: 'schneeanzug', bottom: 'hose-lang', shoes: 'winterstiefel', acc: ['handschuhe', 'schal'] }, // A-15
+    { id: 'heiss', min:  25, head: null,     top: 'tshirt',      bottom: 'hose-kurz', shoes: 'sandalen',      acc: [],                          in: { top: 'tshirt',          bottom: 'hose-kurz' } },
+    { id: 'warm',  min:  20, head: null,     top: 'tshirt',      bottom: 'hose-kurz', shoes: 'sneaker',       acc: [],                          in: { top: 'tshirt',          bottom: 'hose-kurz' } },   // A-01
+    { id: 'mild',  min:  15, head: null,     top: 'longsleeve',  bottom: 'hose-lang', shoes: 'sneaker',       acc: [],                          in: { top: 'longsleeve',      bottom: 'hose-lang' } },   // A-02
+    { id: 'kuehl', min:  10, head: null,     top: 'teddyjacke',  bottom: 'hose-lang', shoes: 'sneaker',       acc: ['halstuch'],                 in: { top: ['pullover', 'kapuzenpullover'], bottom: 'hose-lang' } },   // A-03, A-28
+    { id: 'kalt',  min:   5, head: 'muetze', top: 'winterjacke', bottom: 'hose-lang', shoes: 'sneaker',       acc: ['handschuhe'],               in: { top: ['pullover', 'kapuzenpullover'], bottom: 'hose-lang' }, uvMin: 5 },
+    { id: 'eisig', min:   0, head: 'muetze', top: 'winterjacke', bottom: 'hose-lang', shoes: 'winterstiefel', acc: ['handschuhe', 'schal'],      in: { top: ['pullover', 'kapuzenpullover'], bottom: 'hose-lang' }, uvMin: 5 },
+    { id: 'frost', min: -Infinity, head: 'muetze', top: 'schneejacke', bottom: 'schneehose', shoes: 'winterstiefel', acc: ['handschuhe', 'schal'], in: { top: ['pullover', 'kapuzenpullover'], bottom: 'hose-lang' }, uvMin: 5 },   // A-15, A-23
   ],
   scale: { max: 30, min: -5 },   // Enden der Wärmeskala in °C → 7 Segmente à 5 °C (A-09)
 
   sun: {                          // nur UV-Index, unabhängig von Temperatur und Bewölkung
-    uvMin: 3,                     // ab hier Sonnencreme + Sonnenhut
+    uvMin: 3,                     // ab hier Sonnencreme + Sonnenhut (kalt, eisig, frost: eigenes uvMin 5)   A-22
     uvGlasses: 8,                 // ab hier zusätzlich Sonnenbrille
     head: 'sonnenhut',            // nur, wenn das Band keinen Kopf setzt (Mütze gewinnt)
   },
   wind: {                         // Wind = gustMax ≥ gustMin                                   A-04
     gustMin: 50,                  // km/h Böen, niedrigste DWD-Warnstufe (Bft 7)
-    top: 'kapuzenjacke',          // „Kapuze/Windjacke“ laut Logik-Datei
+    top: 'regenjacke',            // Jana: die gefütterte Kapuzenjacke ist ihre Regen- und Windjacke
     topInBands: ['warm', 'mild', 'kuehl'],   // nicht bei Hitze; ab 'kalt' hat die Winterjacke eine Kapuze
   },
   rain: {                         // Regen = rainProbMax ≥ probMin UND rainSum ≥ sumMin        A-05
     probMin: 50,                  // %
     sumMin: 0.5,                  // mm in 4 h
     top: 'regenjacke',
-    topInBands: ['heiss', 'warm', 'mild', 'kuehl'],            // Winterjacke und Schneeanzug bleiben
+    topInBands: ['heiss', 'warm', 'mild', 'kuehl'],            // Winterjacke und Schneejacke bleiben
+    bottom: 'matschhose',         // Regen in der Kälte: Matschhose statt Jeans                A-24
+    bottomInBands: ['kuehl', 'kalt', 'eisig'],                 // frost: die Schneehose ist schon dicht
     shoes: 'gummistiefel',
     shoesInBands: ['heiss', 'warm', 'mild', 'kuehl', 'kalt'],  // Winterstiefel bleiben
   },
   snow: {                         // Schnee = snowSum ≥ sumMin ODER snowDepth ≥ depthMin       A-06
     sumMin: 0.2,                  // cm Neuschnee in 4 h
     depthMin: 2,                  // cm liegender Schnee
-    top: 'schneeanzug',           // in allen Bändern
-    shoes: 'winterstiefel',       // in allen Bändern, schlägt Gummistiefel, auch über 0 °C
+    top: 'schneejacke',           // Schneejacke + Schneehose nur dort, wo Schnee fällt        A-23
+    bottom: 'schneehose',
+    topInBands: ['eisig', 'frost'],
+    shoes: 'winterstiefel',       // schlägt Gummistiefel, auch über 0 °C (Matsch bei Tauwetter)
+    shoesInBands: ['kuehl', 'kalt', 'eisig', 'frost'],
   },
   ice: {                          // Glätte-Hinweis                                             A-07
     tempMax: 1,                   // °C: tempMin ≤ tempMax …
@@ -238,24 +251,25 @@ const RULES = {
     freezingCodes: [56, 57, 66, 67],   // gefrierender Niesel/Regen im Fenster: immer Glätte
   },
   maxAccessories: 3,
-  accessoryOrder: ['sonnencreme', 'handschuhe', 'schal', 'sonnenbrille'],   // A-08
+  accessoryOrder: ['sonnencreme', 'handschuhe', 'schal', 'halstuch', 'sonnenbrille'],   // A-08
   maxHints: 2,
 };
 ```
 
 ### 7.2 Auswertungsreihenfolge
 
-Spätere Schritte überschreiben frühere. Für das Oberteil gilt damit Schnee > Regen > Wind > Band, für die Schuhe Schnee > Regen > Band.
+Spätere Schritte überschreiben frühere. Für das Oberteil gilt damit Schnee > Regen > Wind > Band, für die Hose Schnee > Regen > Band, für die Schuhe Schnee > Regen > Band.
 
 1. **Band:** das erste Band mit `feltMin >= band.min`.
 2. **Basis-Outfit** aus dem Band übernehmen.
-3. **Sonne:** Bei `uvMax >= sun.uvMin` kommt `sonnencreme` ins Zubehör, und der Kopf wird `sun.head`, falls er leer ist. Bei `uvMax >= sun.uvGlasses` kommt zusätzlich `sonnenbrille` ins Zubehör.
+3. **Sonne:** Bei `uvMax >= (band.uvMin ?? sun.uvMin)` kommt `sonnencreme` ins Zubehör, und der Kopf wird `sun.head`, falls er leer ist. Bei `uvMax >= sun.uvGlasses` kommt zusätzlich `sonnenbrille` ins Zubehör.
 4. **Wind:** Bei `gustMax >= wind.gustMin` wird das Oberteil `wind.top`, wenn das Band in `wind.topInBands` steht.
-5. **Regen:** Bei Regen (Definition in `rain`) wird das Oberteil `rain.top` (Band in `topInBands`) und werden die Schuhe `rain.shoes` (Band in `shoesInBands`).
-6. **Schnee:** Bei Schnee werden Oberteil und Schuhe `snow.top` bzw. `snow.shoes`. Das gilt auch bei Schneematsch über 0 °C.
+5. **Regen:** Bei Regen (Definition in `rain`) wird das Oberteil `rain.top` (Band in `topInBands`), die Hose `rain.bottom` (Band in `bottomInBands`) und werden die Schuhe `rain.shoes` (Band in `shoesInBands`).
+6. **Schnee:** Bei Schnee werden Oberteil und Hose `snow.top` und `snow.bottom` (Band in `topInBands`: eisig, frost) und die Schuhe `snow.shoes` (Band in `shoesInBands`: kühl bis frost). In wärmeren Bändern wird Schnee ignoriert, liegender Schnee in kühl und kalt ergibt nur Winterstiefel (Tauwetter).
 7. **Zubehör:** deduplizieren, nach `accessoryOrder` sortieren (Unbekanntes ans Ende), auf `maxAccessories` kürzen.
 8. **Hinweise** (§8.2), gekürzt auf `maxHints`.
 9. **Wetter-Icon** aus `code` und `isDay` (§8.1).
+9a. **Drinnen:** `inside` = `band.in.top` und `band.in.bottom`, ohne Kopf, Schuhe und Zubehör, ohne Wetter-Overrides (A-26).
 10. **Skala:** `scalePos = (scale.max − clamp(feltMin, scale.min, scale.max)) / (scale.max − scale.min)`.
 
 ### 7.3 Datenmodell
@@ -268,6 +282,7 @@ type Outfit = {
   bottom: IconId;
   shoes: IconId;
   accessories: IconId[];         // 0–3, sortiert
+  inside: { head: null; top: IconId; bottom: IconId; shoes: null; accessories: [] };   // Ansicht „drinnen“ (A-26)
   weatherIcon: IconId;
   hints: IconId[];               // 0–2, Glätte vor Wind
   scalePos: number;              // 0 (oben, warm) … 1 (unten, kalt)
@@ -327,7 +342,9 @@ Sonnencreme und Regenjacke sind **keine** Hinweise, sie gehören zur Kleidung. J
 
 ## 11. Layout & Visuelles
 
-> **Überarbeitung v1.1 (2026-10-06):** Die Optik ist neu (siehe §17, Q36–Q40 und §14.1, A-16…A-20): größere Kleidung, ein Pixel-Thermometer statt der Linienleiste, Pixel-Art auch für Wetter, Hinweise und System, getönter Hintergrund je Wärmeband. Die Logik (`RULES`, `WX`, `recommend()`, `aggregate()`) ist unverändert.
+> **Überarbeitung v1.1 (2026-10-06):** Die Optik ist neu (siehe §17, Q36–Q40 und §14.1, A-16…A-20): größere Kleidung, ein Pixel-Thermometer statt der Linienleiste, Pixel-Art auch für Wetter, Hinweise und System, getönter Hintergrund je Wärmeband. Die Logik (`RULES`, `WX`, `recommend()`, `aggregate()`) war in v1.1 unverändert.
+>
+> **v1.2 (2026-10-07):** zwei Umschalter drinnen/draußen links neben der Hose (A-26), die Schuhe sind ein Paar (A-27), das Hose-Fenster ist 27 Kunstpixel hoch.
 
 ### 11.1 Raster (iPhone 8, 375 × 667 pt, Viewport inkl. Statusleiste)
 
@@ -335,7 +352,7 @@ Sonnencreme und Regenjacke sind **keine** Hinweise, sie gehören zur Kleidung. J
 ┌───────────────────────────────────────────┐  Statusleiste 20 pt (liegt über dem Inhalt)
 │ [Wetter] [⏱]             [H1] [H2]        │  Kopfzeile y 22–70
 │                                   ☀       │
-│        [ KOPF ]                 ┌──┐      │  Fenster Kopf    y 70–152,5
+│        [ KOPF ]                 ┌──┐      │  Fenster Kopf    y 86,5–169
 │                           ┌────┐│  │      │
 │       [ OBERTEIL ]        │22° ▶││▓▓│      │  Marker an der Flüssigkeitsoberfläche
 │                           └────┘│▓▓│      │
@@ -353,14 +370,16 @@ Sonnencreme und Regenjacke sind **keine** Hinweise, sie gehören zur Kleidung. J
 | Wetter-Icon | 14 | 22 | 48 × 48 (16er Raster) | 3 pt |
 | Hinweis H1, H2 | 259, 313 | 22 | 48 × 48 (16er Raster) | 3 pt |
 | Uhr ⏱ („Daten alt“) | 68 | 30 | 32 × 32, neben dem Wetter-Icon | 2 pt |
-| Kleidungs-Fenster Kopf | 12 | 70 | 224 × 82,5, Teil unten ausgerichtet | 5,5 pt |
-| Kleidungs-Fenster Oberteil | 12 | 158 | 224 × 154, Teil mittig | 5,5 pt |
-| Kleidungs-Fenster Hose | 12 | 317,5 | 224 × 143, Teil oben ausgerichtet | 5,5 pt |
+| Kleidungs-Fenster Kopf | 12 | 86,5 | 224 × 82,5, Teil unten ausgerichtet (Unterkante y 169) | 5,5 pt |
+| Kleidungs-Fenster Oberteil | 12 | 180 | 224 × 132 (24 Kunstpixel), Teil unten ausgerichtet (Saum 5,5 pt über der Hose) | 5,5 pt |
+| Kleidungs-Fenster Hose | 12 | 317,5 | 224 × 148,5, Teil oben ausgerichtet (27 Kunstpixel, die Hose berührt die Schuhe) | 5,5 pt |
+| Umschalter drinnen / draußen | 6 | 336 und 392 | je 48 × 48, Symbol 14 × 14 Kunstpixel (42 pt), links neben der Hose | 3 pt |
 | Kleidungs-Fenster Schuhe | 12 | 466 | 224 × 93,5, Teil oben ausgerichtet | 5,5 pt |
 | Zubehör (Reihe, bis zu 3) | 12 | 568 | 224 × 70, mittig, Abstand 10 pt, gemeinsame Standlinie unten | 3,5 pt (3 pt, wenn die Reihe sonst breiter als 224 pt wäre) |
 | Thermometer (SVG) | 216 | 64 | 160 × 600 | Zelle 4 pt |
 
-- **Die Fensterhöhen sind die größten Teile ihrer Art** (Kopf 15, Oberteil 28, Hose 26, Schuhe 17 Kunstpixel hoch). Jedes Kleidungs-Symbol hat eine enge `viewBox` um seinen Inhalt, das Script setzt `width` und `height` aus der `viewBox` mal Pixelmaß (`setPixelIcon`). Dadurch liegt jedes Teil ohne Leerrand im Fenster.
+- **Die Fensterhöhen sind die größten Teile ihrer Art** (Kopf 15, Oberteil 24, Hose 27, Schuhe 17 Kunstpixel hoch; Schuhe sind ein Paar, bis 26 breit). Kopf und Oberteil sind unten bündig: zwischen Mütze und Kragen liegen 11 pt (2 Kunstpixel), zwischen Saum und Hose 5,5 pt, zwischen Hose und Schuhen 0. Jedes Kleidungs-Symbol hat eine enge `viewBox` um seinen Inhalt, das Script setzt `width` und `height` aus der `viewBox` mal Pixelmaß (`setPixelIcon`). Dadurch liegt jedes Teil ohne Leerrand im Fenster.
+- **Umschalter (A-26):** Haus = drinnen, Baum mit Sonne = draußen. Der aktive hat einen hellen Grund, der andere ist zu 40 % sichtbar. Sie liegen links neben dem Hose-Fenster, wo kein Kleidungsstück hinreicht (die Hose beginnt bei x = 63).
 - Das Raster ist **fix**. Leere Kleidungsfenster bleiben leer, nichts rückt nach. Das gilt auch für H1, H2 und ⏱. Die Zubehörreihe ist die Ausnahme: sie ist eine Liste und steht immer **mittig** unter der Kleidung, auch bei 1 oder 2 Teilen (A-21).
 - **Keine sichtbaren Fenster-Rahmen.** Nur das Thermometer hat eine Kontur.
 - **Alles ist Pixel-Art** und hat `shape-rendering: crispEdges`. Es gibt keine Line-Icons mehr. Weil die Pixelmaße nebeneinander verschieden sind (5,5 / 4 / 3,5 / 3 / 2 pt), ist jedes für sich ganzzahlig (ein Vielfaches von 0,5 pt = ganze Gerätepixel).
@@ -408,7 +427,7 @@ Die Zuordnung hängt an der **Position** des Bands, nicht an der ID. Hat `RULES.
 
 ## 12. Icon-Inventar
 
-Symbol-IDs: `i-<slot>-<name>` mit den Slots `top`, `bottom`, `shoes`, `head`, `acc`, `wx`, `hint`, `sys`. Dazu `i-ui-*` für Bausteine des Thermometers. **Alle vorhandenen Icons kommen ins Sprite**, auch unbenutzte, damit ein Tausch nur `RULES` betrifft (≈ 1,5 KB pro Icon).
+Symbol-IDs: `i-<slot>-<name>` mit den Slots `top`, `bottom`, `shoes`, `head`, `acc`, `wx`, `hint`, `sys`. Dazu `i-ui-*` für Bausteine des Thermometers und die Umschalter drinnen/draußen. **Alle vorhandenen Icons kommen ins Sprite**, auch unbenutzte, damit ein Tausch nur `RULES` betrifft (≈ 1,5 KB pro Icon).
 
 ### 12.1 Konvertierung (T7)
 
@@ -422,63 +441,73 @@ Gemessen ergibt das ≈ 28 KB für alle 19 Kleidungs-Icons. Danach läuft `tools
 
 ### 12.2 Kleidung & Zubehör (Pixel-Art)
 
-| Symbol-ID | Quelle | verwendet in | Status |
-|---|---|---|---|
-| `i-top-tshirt` | `t-shirt_blau_32x32.svg` | heiss, warm | ✅ |
-| `i-top-longsleeve` | `longsleeve_oliv-gestreift_32x32.svg` | mild | ✅ |
-| `i-top-strickjacke` | `strickjacke_mauve_32x32.svg` | – (Alternative mild, A-02) | ✅ |
-| `i-top-pullover` | `pullover_gelb_32x32.svg` | – (nie äußerstes Teil, P-08) | ✅ |
-| `i-top-kapuzenpullover` | `kapuzenpullover_gelb_32x32.svg` | – (Alternative Wind, A-04). Silhouette der Regenjacke | ✅ |
-| `i-top-teddyjacke` | `teddyjacke_creme_32x32.svg` | kuehl | ✅ |
-| `i-top-kapuzenjacke` | `kapuzenjacke_pink_32x32.svg` | Wind-Override | ⚠️ Stilbruch (dunkle Kontur), neu zeichnen (P-04) |
-| `i-top-winterjacke` | `winterjacke_rot_32x32.svg` | kalt, eisig | ✅ |
-| `i-top-schneeanzug` | `schneeanzug_blauviolett_32x32.svg` | frost, Schnee-Override | ✅ |
-| `i-top-regenjacke` | `tools/pixel_icons.py` | Regen-Override | ✅ gelb, Kapuze, Reißverschluss, Taschen |
-| `i-bottom-hose-kurz` | `hose-kurz_khaki_32x32.svg` | heiss, warm | ✅ plus zwei Beine in Hautfarbe, damit zwischen Hose und Schuh keine Lücke bleibt (gleich hoch wie die lange Hose) |
-| `i-bottom-hose-lang` | `hose-lang_denim_32x32.svg` | mild … frost | ✅ |
-| `i-shoes-sandalen` | `tools/pixel_icons.py` | heiss | ✅ neu: offene Sandale mit Fuß und drei Riemen (die alte Grafik wirkte wie ein Hut) |
-| `i-shoes-sneaker` | `sneaker_weiss_32x32.svg` | warm … kalt | ✅ Umfärbung: weißer, mit dunklerer Kontur und Sohle (zu wenig Kontrast zum Hintergrund) |
-| `i-shoes-gummistiefel` | `gummistiefel_gelb_32x32.svg` | Regen-Override | ✅ |
-| `i-shoes-winterstiefel` | `winterstiefel_braun_32x32.svg` | eisig, frost, Schnee | ✅ |
-| `i-head-muetze` | `muetze_rot_32x32.svg` | kalt, eisig, frost | ✅ |
-| `i-head-sonnenhut` | `tools/pixel_icons.py` | UV ≥ 3 | ✅ **Basecap** (grün, Schirm nach rechts). Die ID bleibt, weil `RULES.sun.head` sie nennt (A-16) |
-| `i-acc-schal` | `tools/pixel_icons.py` | eisig, frost | ✅ neu: gestreifter Schal mit Wickel, zwei Enden und Fransen (der alte Bogen wirkte wie ein Kopfhörer) |
-| `i-acc-sonnenbrille` | `sonnenbrille_koralle_32x32.svg` | UV ≥ 8 | ✅ |
-| `i-acc-handschuhe` | `tools/pixel_icons.py` | kalt, eisig, frost | ✅ Paar Fäustlinge, senffarben |
-| `i-acc-sonnencreme` | `tools/pixel_icons.py` | UV ≥ 3 | ✅ orange Flasche mit großer Sonne auf dem Etikett |
+Alle Teile stammen aus den Modulen `tools/icons_*.py` (§12.4). **Farben nach Janas echten Kleidungsstücken** (Hauptfarbe = Variante 1, `-v2`, `-v3` sind zusätzliche Farben, A-25). Jedes Teil hat in allen Varianten dieselbe Größe, außer den Leggings (18 statt 20 breit).
 
-Die alten Grafiken von Sonnenhut, Schal und Sandalen (`assets/clothes/…`) bleiben als Quellen im Repo, sind aber nicht mehr im Sprite.
+| Symbol-ID | Hauptfarbe (Jana) | Varianten | Größe | verwendet in |
+|---|---|---|---|---|
+| `i-top-tshirt` | rosa mit Herz | weiß, hellblau (das alte) | 28×24 | heiss, warm |
+| `i-top-longsleeve` | dunkelgrün gestreift | **kurzes Shirt** rosa gestreift, marine gestreift | 28×24 | mild |
+| `i-top-pullover` | dunkelgrün oben, mintgrün unten | rosa/creme | 28×24 | drinnen kühl bis frost (zufällig mit dem Kapuzenpullover) |
+| `i-top-kapuzenpullover` | mintgrün, mit Tasche und Kordeln | flieder | 24×24 | drinnen kühl bis frost (zufällig mit dem Pullover) |
+| `i-top-teddyjacke` | **neu nach Foto:** Fleece mit rosa Blüten, senfgelben Blättern, pinkem Reißverschluss und Kragenring | cremeweiß einfarbig | 28×24 | kuehl |
+| `i-top-strickjacke` | mauve | – | 28×24 | – (Reserve, A-02) |
+| `i-top-regenjacke` | **pink, gefüttert** (war „Kapuzenjacke“) | gelb (die alte Regenjacke), orange | 24×24 | Regen, Wind |
+| `i-top-winterjacke` | rot | petrol mit Reflexstreifen (nicht marine, damit sie sich nicht mit der dunkelblauen Schneejacke verwechseln lässt) | 24×24 | kalt, eisig |
+| `i-top-schneejacke` | **dunkelblau**, gesteppt, Fellrand | Reserve (nicht gezeigt): indigo, magenta, türkis | 24×24 | frost, Schnee in eisig |
+| `i-bottom-hose-kurz` | sand, mit längeren Hautbeinen | Jeans-Shorts | 20×27 | heiss, warm |
+| `i-bottom-hose-lang` | Jeans | **Leggings marine**, **Leggings rosa** (18 breit) | 20×27 | mild … eisig |
+| `i-bottom-schneehose` | **grün**, Latz, gesteppt | – | 22×27 | frost, Schnee in eisig |
+| `i-bottom-matschhose` | goldgelb mit Latz | petrol | 22×27 | Regen in kühl, kalt, eisig |
+| `i-shoes-sneaker` | **weiß/rosa** (rosa Kappe und Ferse) | – | 26×11 | warm … kalt |
+| `i-shoes-sandalen` | **orange Crocs** | – | 26×10 | heiss |
+| `i-shoes-gummistiefel` | **flieder** | gelb | 26×17 | Regen |
+| `i-shoes-winterstiefel` | braun mit Fellrand | anthrazit | 26×14 | eisig, frost, Schnee |
+| `i-head-muetze` | senfgelb | dunkelgrün, flieder | 16×15 | kalt, eisig, frost |
+| `i-head-sonnenhut` | grüne Basecap | orange, weiß mit blauem Schirm | 25×12 | UV |
+| `i-acc-schal` | **lila**, gestreift | grün | 16×19 | eisig, frost |
+| `i-acc-halstuch` | **rosa**, dreieckig mit Tupfen | senfgelb, hellblau | 18×14 | kühl |
+| `i-acc-handschuhe` | **rosa Fäustlinge mit rotem Bund** | senfgelb, cremefarbener Bund | 24×16 | kalt, eisig, frost |
+| `i-acc-sonnencreme` | **weiße Flasche mit blauem Motiv** | – | 10×20 | UV |
+| `i-acc-sonnenbrille` | koralle, runde Gläser | gelb | 24×9 | UV ≥ 8 |
+| `i-ui-innen`, `i-ui-aussen` | Haus, Baum mit Sonne | – | 14×14 | Umschalter (A-26) |
+
+- **Schuhe** sind **ein Symbol je Paar**, Seitenansicht, Spitzen nach außen (V-Stellung), 26 breit. Der linke Schuh ist gezeichnet, der rechte gespiegelt (A-27).
+- **Entfallen:** `i-top-kapuzenjacke` (ist jetzt `i-top-regenjacke`) und `i-top-schneeanzug` (ist Schneejacke plus Schneehose). Die Quell-SVGs bleiben unter `assets/clothes/`.
+- **Beinmitte:** Hosen und Schuhe sind gerade breit und symmetrisch. Das Layout zentriert jedes Symbol über seine Breite, dann sitzt jedes Schuhpaar unter jeder Hose. Die Hautbeine der kurzen Hose sind 7 breit und 7 hoch.
 
 ### 12.3 Wetter, Hinweise, System (Pixel-Art, 16 × 16)
 
-Alle gezeichnet in `tools/pixel_icons.py`, Konturen dunkler als die Füllung (wie bei der Kleidung), keine schwarzen Striche mehr. Der Inhalt jedes Icons wird in der 16 × 16 Fläche zentriert. Pixelmaß 3 pt (Wetter, Hinweise), 2 pt (Uhr).
+Alle gezeichnet in `tools/pixel_icons.py`, Konturen dunkler als die Füllung (wie bei der Kleidung), keine schwarzen Striche mehr. Der Inhalt jedes Icons wird in der 16 × 16 Fläche zentriert (v1.2: Motive gröber, 1-Pixel-Details entfallen, weil das Kind aus 1–2 m schaut). Pixelmaß 3 pt (Wetter, Hinweise), 2 pt (Uhr).
 
 | Symbol-ID | Motiv |
 |---|---|
 | `i-wx-klar` | Sonne mit 8 Strahlen. Auch der obere Anker des Thermometers |
 | `i-wx-klar-nacht` | Mondsichel mit zwei Sternen |
 | `i-wx-teilweise` | Sonne hinter Wolke |
-| `i-wx-bedeckt` | zwei Wolken, die hintere grau |
-| `i-wx-nebel` | graue Wolke mit drei Nebelstreifen |
-| `i-wx-niesel` | Wolke mit drei kleinen hellblauen Tropfen |
-| `i-wx-regen` | graue Wolke mit blauen Tropfen |
+| `i-wx-bedeckt` | zwei Wolken, die hintere grau, gestaffelt (keine spitze Kuppe) |
+| `i-wx-nebel` | graue Wolke mit zwei dicken Nebelstreifen |
+| `i-wx-niesel` | Wolke mit drei hellblauen Tropfen, 2 Pixel breit |
+| `i-wx-regen` | graue Wolke mit fünf blauen Tropfen, 2 × 3 Pixel |
 | `i-wx-schnee` | Wolke mit Schneeflocken |
 | `i-wx-gewitter` | dunkle Wolke mit gelbem Blitz |
 | `i-hint-wind` | drei Windbahnen mit Kringeln |
-| `i-hint-glaette` | Stiefel auf einer Eisplatte mit Bewegungsstrichen: rutschig |
+| `i-hint-glaette` | Stiefel mit Fellrand, nach hinten gekippt, auf einer Eisplatte, zwei Rutschstriche: rutschig |
 | `i-sys-uhr` | kleine Uhr in weichem Grau, ein Hinweis für Erwachsene |
 | `i-sys-fehler` | ruhige Wolke mit Fragezeichen (ein Erwachsener soll nachsehen), kein rotes Warnzeichen |
 | `i-ui-flocke` | weiße Schneeflocke (11 × 11), Baustein in der Thermometerkugel |
 
 Die ursprünglichen Line-Icons (`assets/icons/*.svg`) bleiben als Quellen im Repo, sind aber nicht mehr im Sprite.
 
-### 12.4 `tools/pixel_icons.py`
+### 12.4 Werkzeuge: `tools/pixel_icons.py`, `pxl.py`, `icons_*.py`
 
-Das Skript ist die Quelle der selbst gezeichneten Icons (Wetter, Hinweise, System, Basecap, Handschuhe, Sonnencreme, Regenjacke, Schneeflocke). Es zeichnet in Code (Formen mit automatischer Kontur und Schatten, dazu ein paar Handpixel), setzt die engen `viewBox`en aller Kleidungs-Symbole und **schreibt die Symbole direkt in das Sprite von `index.html`**. Es ist idempotent: vorhandene Symbole derselben ID werden ersetzt. `python3 tools/pixel_icons.py --preview vorschau.html` erzeugt zusätzlich einen Kontaktbogen aller Symbole.
+- **`tools/icons_schuhe_hosen.py`, `icons_oberteile.py`, `icons_kopf_zubehoer.py`** enthalten die gezeichneten Raster (ASCII-Art mit Palette, dazu Funktionen für Umfärbungen). Jedes Modul hat `build()` und liefert `{Symbol-ID: Raster}` samt Farbvarianten. Die Module sind in sich geschlossen und lesen `index.html` nicht.
+- **`tools/pxl.py`** ist das Zeichenwerkzeug (Masken, `Canvas`, `symbol()`) und erzeugt Vorschaubilder ohne Browser (`sheet()` für Kontaktbögen, `app_frames()` für Outfits im App-Maßstab mit echten Fenstern).
+- **`tools/pixel_icons.py`** enthält die Wetter-, Hinweis- und System-Icons (Formen mit automatischer Kontur und Schatten), holt die Raster der Module, legt jedem Kleidungs-Symbol die enge `viewBox` und **schreibt die Symbole direkt in das Sprite von `index.html`**. Vorhandene IDs werden ersetzt, neue am Ende angefügt, `REMOVE` löscht Symbole. Das Skript ist idempotent: `python3 tools/pixel_icons.py` (mit `--preview datei.html` entsteht eine Kontaktbogen-Seite).
 
-- Ein Icon ändern: die Zeichenfunktion im Skript anpassen, Skript laufen lassen, `CACHE_VERSION` in `sw.js` erhöhen.
-- Ein Icon durch eigene Grafik ersetzen: in `index.html` nur den Inhalt des `<symbol>` tauschen. Bei Kleidung dazu `viewBox` auf den Inhalt kürzen (das Skript erledigt das beim nächsten Lauf für alle).
+- Ein Icon ändern: Raster im Modul anpassen, Skript laufen lassen, `CACHE_VERSION` in `sw.js` erhöhen.
+- Eine neue Farbvariante: im Modul eine Variante `-v4` ergänzen, Skript laufen lassen, in `index.html` Farb-Tags (`VARIANT_TAGS`) und bei Bedarf `VARIANT_WEIGHTS` ergänzen. `?test` meldet fehlende Tags und passende Größen.
 - Platzhalter (`data-placeholder`) gibt es nicht mehr. `?test` warnt weiterhin, falls einer auftaucht.
+- **Größe (AC-15):** Das Skript fasst gleiche Pixelläufe über mehrere Zeilen zu einem Rechteck zusammen, und `?overview` und `?test` liegen in eigenen Dateien (A-31). `index.html`, `sw.js` und `manifest.json` liegen damit weit unter 150 KB (etwa 110 KB mit allen Farbvarianten). Das Sprite wächst je Variante um etwa 1 KB.
 
 ## 13. Debug- & Test-Modus
 
@@ -502,16 +531,27 @@ Das Skript ist die Quelle der selbst gezeichneten Icons (Wetter, Hinweise, Syste
 | `code` | `code` (WMO) | 0 |
 | `night` | `isDay = false` (Flag) | Tag |
 | `age` | Datenalter in Minuten | 0 |
+| `state` | `loading`, `error` oder `setup`: Zustände ohne Wetterdaten | – |
+| `bare` | ohne Debug-Overlay (Flag, für die Übersicht) | Overlay an |
+| `view` | `in` zeigt die Ansicht „drinnen“ | draußen |
+| `v` | erzwingt die n-te Farbvariante überall (`v=1` Hauptfarben, `v=2` …) | Tagesauswahl |
+| `seed` | Text, aus dem die Tagesauswahl der Farben gewürfelt wird | Datum |
 
 Das Overlay ist halbtransparent, liegt unten und zeigt Band, `feltMin`, aktive `overrides`, Hinweise und das Datenalter.
 
 ### 13.2 Test (`?test`)
 
-Die Logik liegt in `index.html`, und es gibt keinen Build. Deshalb laufen die Tests in der Seite selbst und geben eine PASS/FAIL-Liste als Text aus:
+Die Logik liegt in `index.html`, und es gibt keinen Build. Deshalb laufen die Tests in der Seite selbst (der Code steht in `tests.js`, den `?test` nachlädt) und geben eine PASS/FAIL-Liste als Text aus:
 - tabellengetriebene Fälle für `recommend()`: jedes Band, jede Bandgrenze (z. B. 24,9 / 25,0), Sonne, Wind, Regen, Schnee, Kombinationen, Limits
 - `aggregate()` mit einer eingebetteten Beispiel-Antwort: Index-Versatz, `null`-Werte, Fenster außerhalb der Daten
 - Icon-Existenz: jede ID aus `RULES`, `WX`, Hinweisen und System ist ein `<symbol>` (AC-12)
+- Regeln je Band: Sonnenschutz ab UV 5 in kalt, eisig, frost, Matschhose, Schneejacke und Schneehose, Schnee in warmen Bändern ignoriert, Ansicht drinnen
+- Farbvarianten: jede Variante passt in das Fenster ihres Teils, die Tagesauswahl ist stabil und alle Farben kommen vor
 - Warnung, solange Platzhalter existieren
+
+### 13.3 Übersicht (`?overview`)
+
+`overview.js` (von `?overview` nachgeladen) zeigt alle Zustände zum Durchsehen: die Regeln als Tabellen (direkt aus `RULES`), die sieben Bänder, die Ansicht drinnen, alle Farbvarianten, jede Wetter-Kombination je Band (die echte Logik, jede Karte ist die echte App im Miniformat, gleiche Ergebnisse zu einer Karte zusammengefasst), Sonderfälle, den Icon-Katalog mit Verwendung (Reserve-Farben markiert) und die Sonderzustände. Die Karten tragen eine Kennung (`kuehl-3`) für Rückmeldungen. `?s=0.45` stellt die Kartengröße ein.
 
 ## 14. Entscheidungen und erledigte Punkte
 
@@ -524,9 +564,9 @@ Die IDs heißen weiter `A-xx`, weil die Spec an vielen Stellen darauf verweist. 
 | A-01 | 20–24 °C: kurze Hose | Logik sagt „kurz/lang“. Die gefühlte Minimaltemperatur ist schon konservativ |
 | A-02 | 15–19 °C: Longsleeve | Logik: „Longsleeve oder T-Shirt mit Strickjacke“. Tausch auf `strickjacke` ist eine Zeile |
 | A-03 | „normale Jacke“ (10–14 °C) = Teddyjacke | einzige Übergangsjacke ohne andere Rolle. Trägt das Kind eine andere, wird in `RULES` das Band `kuehl` geändert |
-| A-04 | Wind: Kapuzenjacke in warm/mild/kühl, ab Böen 50 km/h, dazu das Wind-Icon | Logik: „zusätzlich Kapuze/Windjacke, unabhängig von Temperatur“. Bei ≥ 25 °C keine Jacke, ab 'kalt' Winterjacke mit Kapuze |
+| A-04 | Wind: Regenjacke (Janas gefütterte Kapuzenjacke, v1.2) in warm/mild/kühl, ab Böen 50 km/h, dazu das Wind-Icon | Logik: „zusätzlich Kapuze/Windjacke, unabhängig von Temperatur“. Bei ≥ 25 °C keine Jacke, ab 'kalt' Winterjacke mit Kapuze |
 | A-05 | Regen: ≥ 50 % UND ≥ 0,5 mm in 4 h. Regenjacke nur in Bändern ohne Winterjacke, Gummistiefel nur statt Sandalen/Sneaker | UND vermeidet Gummistiefel bei „vielleicht ein Tropfen“. Winterstiefel sind wärmer und dicht |
-| A-06 | Schnee: ≥ 0,2 cm Neuschnee ODER ≥ 2 cm Schneedecke. Schnee gewinnt immer, auch über 0 °C | Schneematsch → Winterstiefel. Liegender Schnee am Morgen danach zählt auch |
+| A-06 | Schnee: ≥ 0,2 cm Neuschnee ODER ≥ 2 cm Schneedecke. Schnee gewinnt über Regen und Wind, wirkt aber nur noch in kühl bis frost (Details A-23) | Schneematsch → Winterstiefel. Liegender Schnee am Morgen danach zählt auch |
 | A-07 | Glätte: gefrierender Regen ODER (≤ 1 °C UND nass im Fenster oder 6 h davor) | typischer Fall ist Nässe vom Vorabend, die morgens friert |
 | A-08 | Zubehör-Reihenfolge: Sonnencreme, Handschuhe, Schal, Sonnenbrille | greift nur bei 4 Teilen gleichzeitig (UV ≥ 8 bei ≤ 4 °C), praktisch nie |
 | A-09 | Skala 30 … −5 °C | ergibt 7 gleich hohe Bänder. „Nur Linien“ ist seit v1.1 überholt (A-18) |
@@ -535,13 +575,24 @@ Die IDs heißen weiter `A-xx`, weil die Spec an vielen Stellen darauf verweist. 
 | A-12 | Homescreen-Icon = T-Shirt | eindeutigstes Motiv |
 | A-13 | Auto-Sperre 2 min | 30 s reichen zum Anziehen nicht |
 | A-14 | Nachts: Mond statt Sonne, Wolke statt Sonne-mit-Wolke | Mond-Icon vorhanden, im Winter ist es morgens dunkel |
-| A-15 | Unter 0 °C: Schneeanzug im Oberteil-Slot, im Hose-Slot weiter die lange Hose | Q5 gilt nur fürs Oberteil. Das Kind sieht, dass drunter eine Hose gehört |
+| A-15 | *(v1.2: überholt durch A-23)* Unter 0 °C: Schneeanzug im Oberteil-Slot, im Hose-Slot weiter die lange Hose | Q5 gilt nur fürs Oberteil. Das Kind sieht, dass drunter eine Hose gehört. Im Bild waren es vier Beine in fast gleicher Farbe |
 | A-16 | Der Sonnenhut ist eine **Basecap** (Wunsch von Jana, 2026-10-06). Die ID `i-head-sonnenhut` und `RULES.sun.head` bleiben | die Regel ändert sich nicht, nur die Grafik. Ein Umbenennen würde `RULES` anfassen |
 | A-17 | Die Temperatur steht als **Pixelziffern in einer Sprechblase am Thermometer**, ohne „C“, 20 pt hoch (vorher 40 pt Schrift in der Kopfzeile) | Zahl und Füllstand gehören zusammen. Kleiner und ruhiger. Das „C“ ist in Deutschland selbstverständlich |
 | A-18 | Das Thermometer hat farbige Flüssigkeit je Band, Sonne oben, Schneeflocke in der Kugel, Teilstriche **ohne Ziffern** | Das Kind soll „warm = hoch und rot, kalt = tief und blau“ lernen. Ziffern an der Skala würden zeigen, dass Füllstand (gefühlt) und Zahl (echt) um einige Grad abweichen |
 | A-19 | Der Hintergrund ist je Wärmeband **leicht getönt** (pfirsich bis eisblau) | verstärkt die Lektion, ohne Text. Fast cremefarben, damit die Kleidungsfarben stimmen |
 | A-20 | Alle Icons sind **Pixel-Art** in einem Stil (Kontur dunkler als die Füllung). Regenjacke, Handschuhe, Sonnencreme und die fünf fehlenden Wetter-/System-Icons sind gezeichnet | ersetzt die schwarzen Line-Icons und alle Platzhalter (O-3 erledigt) |
 | A-21 | Das Zubehör steht als **mittige Reihe** unter der Kleidung (3,5 pt pro Kunstpixel), nicht mehr als Spalte links. Die Reihe zentriert sich auch bei 1 oder 2 Teilen | die Spalte war winzig und lag am Rand. Die Reihe ist eine Liste, die Kleidungsfenster bleiben fix |
+| A-22 | **Sonnenschutz je Band.** `sun.uvMin` bleibt 3, aber die Bänder kalt, eisig und frost haben `uvMin: 5`. Die Brille bleibt bei UV 8 | Jana (2026-10-06): im Winter nicht jeden Tag Creme, nur bei hohem UV. Die UV-Maxima in Deutschland liegen von November bis Februar bei 1–2, die Regel wirkt also von März bis Oktober. Das BfS sagt, die Temperatur zähle für den Sonnenschutz nicht. Diese Abweichung ist gewollt |
+| A-23 | **Schneejacke und Schneehose** statt Schneeanzug über Jeans: im Hose-Fenster steht eine grüne Schneehose, das Oberteil ist eine Schneejacke. Beides gilt in frost und bei Schnee in eisig. Winterstiefel bei Schnee ab kühl. Wärmer (warm, mild, heiss) wird Schnee ignoriert | Jana: Jacke und Hose sind im echten Schrank getrennt. Tauwetter bei gefühlt 12 °C ergab sonst einen Schneeanzug |
+| A-24 | **Matschhose bei Regen in der Kälte** (kühl, kalt, eisig). In frost bleibt die Schneehose | Jana: gute Idee. Im Bestand fehlte das Teil, das Symbol ist neu |
+| A-25 | **Farbvarianten:** Ein Teil hat eine Hauptfarbe (`i-…`) und weitere (`i-…-v2`, `-v3`). Die App wählt je Teil und Tag eine Variante (Hash aus Datum und Symbol-ID, gewichtet in `VARIANT_WEIGHTS`), gleicher Tag = gleiches Bild. Logik und `RULES` kennen nur die Haupt-ID | Jana: „ein paar zusätzliche Varianten, random“. Die Hauptfarben sind ihre echten Teile (Farbliste in §12.2) |
+| A-26 | **Drinnen und draußen:** Zwei Umschalter links neben der Hose (Haus, Baum). Draußen = Empfehlung wie bisher. Drinnen = Grundkleidung (`band.in`), ohne Kopf, Schuhe, Zubehör, ohne Wetter-Overrides. Von kühl bis frost trägt das Kind drinnen Pullover oder Kapuzenpullover (je Tag eines, `in.top` ist eine Liste, beide machen keinen Unterschied). Nach 60 s und beim Aufwecken springt die Anzeige zurück auf draußen | Jana: Schichten sichtbar machen, ohne Q5 aufzugeben. Wetter-Icon, Hinweise und Thermometer bleiben in beiden Ansichten |
+| A-27 | **Schuhe sind ein Paar** (ein Symbol je Paar, Seitenansicht, Spitzen nach außen, linker Schuh gespiegelt). Kurze Hose mit längeren Hautbeinen. Mütze senfgelb. Sonnenbrille 24 × 9 mit runden Gläsern, Handschuh-Paar 24 breit. Die pinke Kapuzenjacke ist Janas gefütterte Regenjacke: `i-top-kapuzenjacke` entfällt, `i-top-regenjacke` ist jetzt pink (gelb als Variante) | Jana: ein Schuh unter zwei Beinen wirkte falsch. Farben aus ihrem Schrank |
+| A-28 | **Halstuch in kühl, Schal in eisig und frost.** In kühl (10–14 °C) kommt ein dreieckiges Halstuch (`i-acc-halstuch`, rosa, Varianten senfgelb und hellblau) ins Zubehör. Der Schal bleibt in eisig und frost, jetzt in lila (Variante grün). `accessoryOrder`: Sonnencreme, Handschuhe, Schal, Halstuch, Sonnenbrille | Jana (2026-10-07). Die Logik-Datei kennt in kühl kein Zubehör. Das Halstuch ist die Auslegung von „statt dem Schal bei kühl“. Ändern: Zeile des Bands `kuehl` in `RULES` |
+| A-29 | **Schneejacke nur in Dunkelblau zeigen.** Die weiteren Farben (indigo, magenta, türkis) bleiben im Sprite als Reserve, `VARIANT_WEIGHTS` gibt ihnen Gewicht 0 | Jana: es gibt noch keine echte Schneejacke (tbd). Eine Reserve-Farbe einschalten: Gewicht in `VARIANT_WEIGHTS` erhöhen |
+| A-30 | **Sneaker und Sandalen (Crocs) haben keine Farbvarianten.** Die Basecap ist grün, orange, weiß/blau. Das gestreifte `i-top-longsleeve-v2` ist ein kurzes Shirt | Jana (2026-10-07): „die Varianten für die Sneaker und die Crocs brauchen wir nicht“, „v2 als kurzes Shirt“, Cap „lieber orange“ |
+| A-31 | **Größe:** `?overview` und `?test` liegen in `overview.js` und `tests.js` und werden nur bei diesen Parametern nachgeladen. `index.html` enthält nur noch, was der Kiosk braucht | AC-15 hatte mit 149 KB keinen Spielraum für weitere Farben. Die zwei Dateien laden Entwicklungswerkzeuge, der Kiosk lädt sie nie |
+| A-32 | **Kapuzen sind umgeklappt.** Jacken und Pullover mit Kapuze (Winter-, Schnee-, Regen-, Teddyjacke, Kapuzenpullover) zeigen die Kapuze als Ring auf den Schultern (Kragenwulst mit Futter im Halsloch) statt als hochgezogene Kapuze. Alle Oberteile sind 24 Zeilen hoch (28 breit bei T-Shirt, Longsleeve, Pullover, Strickjacke und Teddyjacke, sonst 24). Das Oberteil-Fenster ist 132 pt hoch und unten bündig, der Kopf sitzt direkt darüber | Jana (2026-10-07): die Kapuze gab dem Oberteil eine komische Proportion zur Hose, und eine Mütze darüber las sich wie ein zweiter Kopf. Oberteil : Hose ist jetzt 47 : 53 statt 51 : 49. Schwäche: die Kapuze ist weniger eindeutig, vor allem bei der roten Winterjacke |
 
 ### 14.2 Von Jana geklärt
 
@@ -562,7 +613,7 @@ Die IDs heißen weiter `A-xx`, weil die Spec an vielen Stellen darauf verweist. 
 | OFFEN-11 | 30 … −5 °C (A-09) |
 | OFFEN-12/13 | UV ≥ 3 Creme und Hut, UV ≥ 8 Brille (Logik-Datei). Mütze schlägt Sonnenhut |
 | OFFEN-14 | UND, 50 % / 0,5 mm (A-05) |
-| OFFEN-15 | Regenjacke ja (Logik-Datei), vorerst Platzhalter Kapuzenjacke. Matschhose nicht in der Logik → nein |
+| OFFEN-15 | Regenjacke ja (Logik-Datei), vorerst Platzhalter Kapuzenjacke. Matschhose nicht in der Logik → nein *(v1.2: ja, bei Regen in der Kälte, A-24)* |
 | OFFEN-16 | kein Schirm (nicht in der Logik) |
 | OFFEN-17/18/22 | 0,2 cm oder 2 cm Decke; Schneeanzug; Schnee gewinnt auch über 0 °C (A-06) |
 | OFFEN-19/20 | Böen 50 km/h (A-04); Glätte-Regel A-07 |
@@ -582,8 +633,8 @@ Die IDs heißen weiter `A-xx`, weil die Spec an vielen Stellen darauf verweist. 
 - **AC-3** Ohne gespeicherten Standort erscheint der Setup-Screen.
 - **AC-4** Die Empfehlung basiert auf der aktuellen plus den 3 folgenden Stunden: Momentanwerte `i…i+3`, Werte der vorangehenden Stunde `i+1…i+4`. Die Kleidung folgt `min(apparent_temperature)` im Fenster (Test mit Beispiel-Antwort).
 - **AC-5** Für jedes Band in `RULES` zeigt `?debug&felt=<Wert im Band>` genau das Basis-Outfit dieses Bands.
-- **AC-6** `?debug&felt=22&uv=3` zeigt Sonnencreme und Sonnenhut, mit `uv=8` zusätzlich die Sonnenbrille. `?debug&felt=3&uv=5` zeigt die Mütze (kein Sonnenhut) und die Sonnencreme.
-- **AC-7** `?debug&felt=12&rain=80&rainsum=2` zeigt Regenjacke und Gummistiefel, mit zusätzlich `snow=1` Schneeanzug und Winterstiefel. `?debug&felt=3&rain=80&rainsum=2` behält Winterjacke und Winterstiefel.
+- **AC-6** `?debug&felt=22&uv=3` zeigt Sonnencreme und Sonnenhut, mit `uv=8` zusätzlich die Sonnenbrille. `?debug&felt=3&uv=5` zeigt die Mütze (kein Sonnenhut) und die Sonnencreme, mit `uv=4` keine Sonnencreme (A-22).
+- **AC-7** `?debug&felt=12&rain=80&rainsum=2` zeigt Regenjacke, Matschhose und Gummistiefel, mit zusätzlich `snow=1` Winterstiefel statt Gummistiefel. `?debug&felt=17&rain=80&rainsum=2` zeigt Regenjacke, die lange Hose und Gummistiefel (die Matschhose gibt es erst ab kühl). `?debug&felt=7&rain=80&rainsum=2` zeigt Winterjacke, Matschhose und Gummistiefel, `?debug&felt=3&rain=80&rainsum=2` Winterjacke, Matschhose und Winterstiefel (A-23, A-24). `?debug&felt=3&snow=1` zeigt Schneejacke, Schneehose und Winterstiefel.
 - **AC-8** Es werden nie mehr als 3 Zubehör-Icons und nie mehr als 2 Hinweis-Icons angezeigt.
 - **AC-9** Leere Kleidungsfenster verändern die Position der übrigen Fenster nicht. Die Zubehörreihe ist mittig zentriert (A-21).
 - **AC-10** Die Flüssigkeitsoberfläche (und der Marker) liegt bei `felt=30` ganz oben in der Röhre und bei `felt=-5` am unteren Ende der Skala (Übergang zur Kugel), dazwischen linear. Werte außerhalb werden begrenzt. (Logik: `scalePos`, 4 `?test`-Fälle.)
@@ -592,11 +643,13 @@ Die IDs heißen weiter `A-xx`, weil die Spec an vielen Stellen darauf verweist. 
 - **AC-13** Alle Icons, das Thermometer und die Pixelziffern erscheinen auf dem iPhone 8 ohne weiche Kanten (Sichtprüfung).
 - **AC-14** Nach dem Aufwecken werden die Daten neu geladen, ohne Nutzeraktion. Es gibt höchstens einen Abruf pro Aufwecken.
 - **AC-15** `index.html` + `sw.js` + `manifest.json` sind zusammen < 150 KB (unkomprimiert).
-- **AC-16** `?debug&felt=17&gust=55` zeigt die Kapuzenjacke und das Wind-Icon. `?debug&felt=27&gust=55` behält das T-Shirt und zeigt das Wind-Icon.
+- **AC-16** `?debug&felt=17&gust=55` zeigt die Regenjacke und das Wind-Icon. `?debug&felt=27&gust=55` behält das T-Shirt und zeigt das Wind-Icon.
 - **AC-17** `?debug&felt=-1&tmin=0&wet=0.5` zeigt das Glätte-Icon, ebenso `?debug&code=66`.
 - **AC-18** Nach einem Deploy mit neuer `CACHE_VERSION` läuft spätestens nach dem zweiten Aufwecken die neue Version.
 - **AC-19** `?test` meldet keine Fehler. Seit v1.1 gibt es keine Platzhalter mehr, also auch keine Warnungen.
 - **AC-20** Der Marker liegt in jedem Zustand links von der Röhre und überdeckt keine Kleidung (Sichtprüfung bei `?debug&temp=29`, `?debug&temp=-12`). Mit `?debug&temp=…` bleiben Kleidungsteile und Zubehör in ihren festen Fenstern.
+- **AC-21** `?debug&felt=3&uv=9&rain=80&rainsum=2&view=in` zeigt Pullover oder Kapuzenpullover (je Tag eines, mit `?seed=x` wechselbar) und lange Hose, ohne Kopf, Schuhe und Zubehör. Ein Tipp auf den Baum zeigt wieder die Empfehlung, nach 60 s ohne Tipp springt die Anzeige von selbst zurück (A-26). Das inaktive Symbol ist zu 40 % sichtbar.
+- **AC-22** Mit `?debug&…&v=2` erscheint überall die 2. Farbvariante, wo es sie gibt. Ohne `v` bleibt die Auswahl am selben Tag gleich und wechselt über die Tage (A-25).
 
 ## 16. Tasks
 
@@ -609,13 +662,14 @@ Die IDs heißen weiter `A-xx`, weil die Spec an vielen Stellen darauf verweist. 
 | T5 | `?test`-Modus: Fälle für `recommend()`, `aggregate()` mit Beispiel-Antwort, Icon-Existenz | T3, T4, T7 |
 | T6 | Layout-Raster mit festen Maßen, Slots, Thermometer mit Marker (v1.1) | – |
 | T7 | `tools/svg2symbol`, Sprite zusammenstellen, IDs nach §12. v1.0: Platzhalter. Ab v1.1: alle Icons gezeichnet mit `tools/pixel_icons.py` (§12.4) | T1 |
-| T7a | **Erledigt in v1.1** bis auf die Kapuzenjacke ohne Kontur: alle Platzhalter sind gezeichnet (`tools/pixel_icons.py`). Die Kapuzenjacke bleibt offen und blockiert nichts | – |
+| T7a | **Erledigt in v1.2:** alle Platzhalter sind gezeichnet, auch die Kapuzenjacke (jetzt die pinke Regenjacke) | – |
 | T8 | Wetterzeile: Icon-Mapping inkl. Nacht, Hinweise, Uhr | T3, T7 |
 | T9 | Zustände (Setup inkl. Geolocation-Button, Laden, Veraltet, Fehler) und Caching | T3 |
 | T10 | Aktualisierung (Aufwecken, 30 min, Entprellen) und SW-Update-Ablauf | T3 |
 | T11 | Debug-Modus mit Overlay | T4 |
 | T12 | Test auf dem Gerät: alle ACs. Danach eine Woche Alltagstest, Schwellen in `RULES` nachjustieren (P-17) | alles |
 | T13 | **v1.1** Visuelle Überarbeitung: Layout, Thermometer, Icons, Farben. Auf Branch `visual-refresh`, auf dem Gerät noch zu prüfen (AC-13, AC-20) | T12 |
+| T14 | **v1.2 / v1.2.1** Regeln (A-22…A-24), Umschalter drinnen/draußen (A-26), Farbvarianten (A-25), neue Pixelgrafiken in Janas Farben (A-27). Lokal auf `main`, nicht committet, auf dem Gerät noch zu prüfen (AC-13, AC-20, AC-21, AC-22) | T13 |
 
 ## 17. Entscheidungslog
 
@@ -661,6 +715,14 @@ Die IDs heißen weiter `A-xx`, weil die Spec an vielen Stellen darauf verweist. 
 | Q38 | v1.1: Die Temperatur steht in einer Sprechblase am Thermometer, Pixelziffern, klein. Die Kopfzeile trägt nur Wetter-Icon und Hinweise. |
 | Q39 | v1.1: Der Hintergrund ist je Wärmeband dezent getönt. |
 | Q40 | v1.1: Alle Icons sind Pixel-Art. Die fehlenden Grafiken sind gezeichnet. Der Sonnenhut ist eine Basecap. Die Logik bleibt unverändert. Erst lokal auf einem Branch, nichts veröffentlicht. |
+| Q41 | v1.2: Wo der Sonnenschutz im Winter sinnvoll ist, entscheidet nur der UV-Index. Kalt, eisig, frost brauchen UV ≥ 5 statt 3 (A-22). |
+| Q42 | v1.2: Schnee wirkt nur in kühl bis frost, in eisig und frost als Schneejacke plus Schneehose (A-23). Bei Regen in der Kälte trägt das Kind eine Matschhose (A-24). |
+| Q43 | v1.2: Teile haben Farbvarianten, die die App je Tag wechselt und die Nachbarn nicht zusammenfallen lassen (A-25, `VARIANT_TAGS`). |
+| Q44 | v1.2: Zwei Umschalter links zeigen „drinnen“ (Grundkleidung) und „draußen“ (Empfehlung). Das ändert Q5 nicht: je Ansicht ein Teil je Fenster (A-26). |
+| Q45 | v1.2: Schuhe sind ein Paar in Seitenansicht (V-Stellung). Die Farben folgen Janas echtem Schrank (A-27). |
+| Q46 | v1.2.1: Kühl trägt ein Halstuch, eisig und frost einen Schal (A-28). Die Schneejacke wird nur in Dunkelblau gezeigt (A-29). Sneaker und Crocs bleiben einfarbig (A-30). |
+| Q47 | v1.2.1: Test und Übersicht liegen in eigenen Dateien und werden nur bei Bedarf geladen (A-31). |
+| Q48 | v1.2.1: Kapuzen sind umgeklappt, alle Oberteile 24 Zeilen, das Oberteil-Fenster ist 132 pt hoch und unten bündig (A-32). |
 
 ## 18. Prüfbericht v0.1 → v1.0
 

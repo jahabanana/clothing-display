@@ -2,14 +2,16 @@
 """
 Pixel-Icons zeichnen und ins Sprite von index.html schreiben (Spec §12.5).
 
-Das Skript hat drei Aufgaben:
-1. Die Wetter-, Hinweis- und System-Icons (16 x 16) sowie die neuen
-   Kleidungsstücke (Basecap, Handschuhe, Sonnencreme, Regenjacke) werden hier
-   in Code gezeichnet. Rundungen und Konturen entstehen aus Formen ("Masken"),
-   die Kontur ist der Rand der Form.
-2. Alle Kleidungs-Symbole bekommen eine enge viewBox um ihren sichtbaren
+Das Skript hat vier Aufgaben:
+1. Die Wetter-, Hinweis- und System-Icons (16 x 16) stehen hier in Code
+   (Rundungen und Konturen entstehen aus Formen, die Kontur ist der Rand).
+   Wo ein Icon-Modul dasselbe Symbol liefert, gewinnt das Modul.
+2. Die Kleidung, das Zubehör und die Bedienelemente kommen aus den Modulen
+   tools/icons_schuhe_hosen.py, icons_oberteile.py und icons_kopf_zubehoer.py
+   (handgezeichnete ASCII-Raster mit Farbvarianten, Funktion build()).
+3. Alle Kleidungs-Symbole bekommen eine enge viewBox um ihren sichtbaren
    Inhalt, damit das Layout jedes Teil ohne Leerrand platzieren kann.
-3. Die Symbole werden in das Sprite von index.html geschrieben. Vorhandene
+4. Die Symbole werden in das Sprite von index.html geschrieben. Vorhandene
    Symbole mit derselben ID werden ersetzt, neue am Ende des Sprites angefügt.
 
 Das Skript ist idempotent. Aufruf: python3 tools/pixel_icons.py
@@ -22,89 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 INDEX = ROOT / "index.html"
 
-N4 = ((1, 0), (-1, 0), (0, 1), (0, -1))
-
-
-# ---------- Zeichenwerkzeug ----------
-
-def ascii_mask(rows, ch="#"):
-    return {(x, y) for y, row in enumerate(rows) for x, c in enumerate(row) if c == ch}
-
-
-def disc(cx, cy, r):
-    return {
-        (x, y)
-        for x in range(int(cx - r) - 1, int(cx + r) + 2)
-        for y in range(int(cy - r) - 1, int(cy + r) + 2)
-        if (x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r * r
-    }
-
-
-def rect(x, y, w, h):
-    return {(i, j) for i in range(x, x + w) for j in range(y, y + h)}
-
-
-def shift(mask, dx, dy):
-    return {(x + dx, y + dy) for x, y in mask}
-
-
-def clip(mask, x0=-999, y0=-999, x1=999, y1=999):
-    return {(x, y) for x, y in mask if x0 <= x <= x1 and y0 <= y <= y1}
-
-
-class Canvas:
-    def __init__(self, w, h):
-        self.w, self.h, self.px = w, h, {}
-
-    def paint(self, mask, fill, outline, shade=None):
-        """Füllt die Form, der Rand (4er-Nachbarschaft) wird zur Kontur,
-        die Reihe über dem unteren Rand optional zum Schatten."""
-        edge = {p for p in mask if any((p[0] + dx, p[1] + dy) not in mask for dx, dy in N4)}
-        for p in mask:
-            self.px[p] = outline if p in edge else fill
-        if shade:
-            for x, y in mask - edge:
-                if (x, y + 1) in edge:
-                    self.px[(x, y)] = shade
-
-    def flat(self, mask, color):
-        for p in mask:
-            self.px[p] = color
-
-    def dots(self, cells, color):
-        for p in cells:
-            self.px[p] = color
-
-    def art(self, rows, palette, ox=0, oy=0):
-        """Handgezeichnete Reihen. '.' ist leer, jedes andere Zeichen steht in der Palette."""
-        for y, row in enumerate(rows):
-            for x, c in enumerate(row):
-                if c != ".":
-                    self.px[(x + ox, y + oy)] = palette[c]
-
-
-def symbol(sid, px, viewbox):
-    by_color = {}
-    for (x, y), color in px.items():
-        by_color.setdefault(color.lower(), []).append((y, x))
-    parts = []
-    for color, cells in by_color.items():
-        by_row = {}
-        for y, x in cells:
-            by_row.setdefault(y, []).append(x)
-        d = []
-        for y in sorted(by_row):
-            xs = sorted(by_row[y])
-            runs = []
-            for x in xs:
-                if runs and runs[-1][1] == x:
-                    runs[-1][1] = x + 1
-                else:
-                    runs.append([x, x + 1])
-            for x1, x2 in runs:
-                d.append(f"M{x2} {y}H{x1}V{y + 1}H{x2}V{y}Z")
-        parts.append(f'<path d="{"".join(d)}" fill="{color}"/>')
-    return f'<symbol id="{sid}" viewBox="{viewbox}">{"".join(parts)}</symbol>'
+from pxl import N4, Canvas, ascii_mask, clip, disc, rect, shift, symbol  # noqa: E402
 
 
 # ---------- Palette ----------
@@ -191,7 +111,7 @@ def wx_klar_nacht():
 
 def wx_teilweise():
     cv = Canvas(16, 16)
-    draw_sun(cv, 5.5, 5.5, r=3.2, ray_len=2)
+    draw_sun(cv, 6.5, 6.5, r=3.2, ray_len=2)
     draw_cloud(cv, 2, 6, CLOUD)
     return cv
 
@@ -272,12 +192,10 @@ def hint_wind():
     cv = Canvas(16, 16)
     c = "#5fa3c0"
     line = lambda x0, x1, y: [(x, y) for x in [x0 + i * 0.5 for i in range(int((x1 - x0) * 2) + 1)]]
-    # obere Bahn mit Kringel nach oben
-    stroke(cv, line(1.5, 10.5, 5.0) + arc(10.5, 2.9, 2.1, 90, -150), c)
-    # mittlere Bahn, lang
-    stroke(cv, line(0.5, 12.5, 8.5), c)
-    # untere Bahn mit Kringel nach unten
-    stroke(cv, line(2.5, 9.5, 12.0) + arc(9.5, 14.1, 2.1, -90, 150), c)
+    # obere Bahn mit Kringel nach oben, mittlere Bahn lang, untere Bahn mit Kringel nach unten (alles innerhalb 16 x 16)
+    stroke(cv, line(1.5, 10.5, 5.0) + arc(10.5, 3.0, 2.0, 90, -150), c)
+    stroke(cv, line(0.5, 12.5, 8.0), c)
+    stroke(cv, line(2.5, 9.5, 10.9) + arc(9.5, 12.9, 2.0, -90, 150), c)
     return cv
 
 
@@ -334,132 +252,6 @@ def ui_flocke():
     return cv
 
 
-SKIN, SKIN_EDGE = "#f4cfae", "#cf9f78"
-
-
-# ---------- Kleidung (Koordinaten frei, die viewBox wird eng um den Inhalt gelegt) ----------
-
-def head_cap():
-    """Basecap von der Seite, Schirm nach rechts, mit Knopf, Naht und Glanz."""
-    cv = Canvas(27, 17)
-    fill, edge, shade, hi = "#5cac72", "#3b7f50", "#4a9a62", "#9bd8ac"
-    visor_fill, visor_shade = "#3f8a57", "#357a4b"
-    dome = clip(disc(9.5, 10.0, 8.8), y1=11)
-    visor = set()
-    for x in range(12, 25):
-        top = 9 + (x - 12) // 6
-        visor |= {(x, top + k) for k in range(4)}
-    visor -= {(24, 9 + 12 // 6), (24, 9 + 12 // 6 + 3)}
-    cv.paint(dome | visor, fill, edge, shade)
-    for p in visor - dome:
-        if cv.px.get(p) == fill:
-            cv.px[p] = visor_fill
-        elif cv.px.get(p) == shade:
-            cv.px[p] = visor_shade
-    cv.dots([(20, 11), (21, 11), (22, 12), (23, 12)], "#58a470")
-    cv.dots([(10, 2), (10, 3), (11, 4), (11, 5), (12, 6), (12, 7), (13, 8), (13, 9)], shade)
-    cv.dots([(9, 0), (10, 0), (9, 1)], edge)
-    cv.dots([(10, 1)], shade)
-    cv.dots([(3, 7), (3, 8), (4, 5), (5, 4)], hi)
-    return cv
-
-
-def acc_handschuhe():
-    """Zwei Fäustlinge, der linke mit Daumen nach rechts, der rechte gespiegelt."""
-    fill, edge, shade = "#f0bb43", "#bf8a28", "#d9a236"
-    cuff, cuff_rib = "#fdf0c8", "#e8cf8a"
-    W = 26
-    cv = Canvas(W, 16)
-    body = disc(4.8, 4.8, 4.5) | rect(1, 4, 8, 7)
-    body = {p for p in body if p[1] <= 10}
-    thumb = disc(10.0, 7.4, 2.0)
-    cv.paint(body | thumb, fill, edge, shade)
-    cv.dots([(3, 2), (3, 3), (4, 1)], "#f9dc8a")
-    cv.paint(rect(1, 11, 8, 5), cuff, edge)
-    for x in (3, 5, 7):
-        for y in range(12, 15):
-            cv.dots([(x, y)], cuff_rib)
-    cv.px.update({(W - 1 - x, y): c for (x, y), c in list(cv.px.items())})
-    return cv
-
-
-def acc_sonnencreme():
-    """Sonnencreme-Flasche, orange, mit großer Sonne auf dem Etikett."""
-    cv = Canvas(12, 20)
-    cv.paint(rect(3, 0, 6, 4), "#fff1c9", "#c9a64e", "#ecd896")
-    cv.paint(rect(4, 4, 4, 2), "#fde7c8", "#bf6f2c")
-    body = clip(rect(1, 6, 10, 14) | disc(6.0, 9.0, 5.0), y0=6) - {(1, 19), (10, 19)}
-    cv.paint(body, "#f4a259", "#bf6f2c", "#e08a3f")
-    cv.dots([(2, 8), (2, 9), (2, 10)], "#f9c490")
-    cv.flat(rect(3, 10, 6, 7), "#fff6e0")
-    cv.paint(disc(6, 13.5, 2.3), "#f8cd4e", "#e09a2c")
-    cv.dots([(6, 10), (6, 16), (3, 13), (8, 13)], "#f2a63a")
-    return cv
-
-
-def acc_schal():
-    """Gestreifter Schal: dicker Wickel, ein langes Ende vorn, ein kürzeres dahinter, Fransen."""
-    cv = Canvas(16, 19)
-    base, edge, shade, stripe = "#5e8c8a", "#3f6867", "#4d7a78", "#f3ead2"
-    back = rect(2, 4, 6, 10)
-    front = rect(7, 4, 7, 14)
-    band = rect(0, 0, 16, 6) - {(0, 0), (15, 0), (0, 5), (15, 5)}
-    cv.paint(back, "#4d7a78", "#3a5f5e", "#436e6c")
-    cv.paint(front, base, edge, shade)
-    cv.paint(band, base, edge, shade)
-    for y in (9, 10, 13, 14):
-        cv.dots([(x, y) for x in range(8, 13)], stripe)
-    for y in (8, 9):
-        cv.dots([(x, y) for x in range(3, 7)], "#d7cdb4")
-    cv.dots([(7, 18), (9, 18), (11, 18), (13, 18), (3, 14), (5, 14), (7, 14)], shade)
-    cv.dots([(2, 1), (3, 1), (2, 2), (6, 2), (7, 2)], "#8fb8b5")
-    return cv
-
-
-def shoes_sandalen():
-    """Offene Sandale von der Seite: Fuß, drei orange Riemen, Sohle. Spitze nach links."""
-    cv = Canvas(19, 10)
-    foot = ascii_mask([
-        "..........####.....",
-        ".........######....",
-        "......#########....",
-        "....###########....",
-        "..##############...",
-        ".################..",
-        "###################",
-    ])
-    cv.paint(foot, SKIN, SKIN_EDGE)
-    for x0, x1, y0 in ((5, 7, 3), (10, 12, 0), (15, 17, 3)):
-        cv.paint(rect(x0, y0, x1 - x0 + 1, 7 - y0), "#ec8c3f", "#b85f1f")
-    sole = rect(0, 7, 19, 3) - {(0, 7), (18, 7), (0, 9), (18, 9)}
-    cv.paint(sole, "#d9732f", "#a85620", "#c4651f")
-    return cv
-
-
-def rain_jacket_from(grid):
-    """Regenjacke: Kapuzen-Silhouette (Kapuzenpullover) in Regengelb, mit Reißverschluss und Taschen."""
-    pal = {"#c6a34d": "#c99a1c", "#e5be5b": "#f7cf3d", "#a78a41": "#dcae26"}
-    cv = Canvas(24, 28)
-    for p, c in grid.items():
-        cv.px[p] = pal[c]
-    xs = [p[0] for p in grid]
-    ys = [p[1] for p in grid]
-    x0, y0 = min(xs), min(ys)
-    edge = "#c99a1c"
-    mid = x0 + 11
-    # Reißverschluss
-    for y in range(y0 + 9, y0 + 27):
-        cv.px[(mid, y)] = edge
-        cv.px[(mid + 1, y)] = "#fff0a8"
-    # Taschenschlitze
-    for x in (mid - 6, mid - 5, mid - 4, mid + 4, mid + 5, mid + 6):
-        cv.px[(x, y0 + 21)] = edge
-    # Glanz auf der linken Schulter und dem linken Ärmel
-    for p in ((x0 + 5, y0 + 12), (x0 + 5, y0 + 13), (x0 + 2, y0 + 13), (x0 + 2, y0 + 14), (x0 + 2, y0 + 15)):
-        cv.px[p] = "#fde886"
-    return cv
-
-
 # ---------- Sprite ----------
 
 WEATHER = {
@@ -470,13 +262,17 @@ WEATHER = {
     "i-sys-uhr": sys_uhr, "i-sys-fehler": sys_fehler,
 }
 UI = {"i-ui-flocke": (ui_flocke, "0 0 11 11")}
-NEW_CLOTHES = {
-    "i-head-sonnenhut": head_cap,       # ID bleibt (RULES), die Grafik ist jetzt eine Basecap
-    "i-acc-schal": acc_schal,
-    "i-shoes-sandalen": shoes_sandalen,
-    "i-acc-handschuhe": acc_handschuhe,
-    "i-acc-sonnencreme": acc_sonnencreme,
-}
+
+# Icon-Module mit je einer Funktion build() -> {Symbol-ID: Raster}. Später genannte gewinnen.
+MODULES = ["icons_schuhe_hosen", "icons_oberteile", "icons_kopf_zubehoer"]
+UI_VIEWBOX = {"i-ui-innen": "0 0 14 14", "i-ui-aussen": "0 0 14 14"}   # feste Fläche, Umschalter links im Bild
+REMOVE = [                        # Symbole, die es nicht mehr gibt
+    "i-top-kapuzenjacke",         # ist jetzt i-top-regenjacke (pink, gefüttert, A-27)
+    "i-top-schneeanzug",          # ist Schneejacke + Schneehose (A-23)
+    "i-shoes-sneaker-v2", "i-shoes-sneaker-v3", "i-shoes-sandalen-v2", "i-shoes-sandalen-v3",   # keine Varianten (A-30)
+    "i-acc-schal-v3",             # der Schal gibt es in lila und grün (A-28)
+]
+
 
 def recenter(px, size=16):
     """Schiebt den Inhalt in die Mitte der size x size Fläche, damit alle Icons gleich sitzen."""
@@ -487,34 +283,26 @@ def recenter(px, size=16):
     return {(x + dx, y + dy): c for (x, y), c in px.items()}
 
 
-SNEAKER_COLORS = {"#babab4": "#8d8d86", "#d8d8d2": "#f4f4ef", "#9e9e99": "#74746e"}
+def normalize(px):
+    """Schiebt den Inhalt auf (0, 0), damit der Pfad-Parser keine negativen Koordinaten sieht."""
+    x0 = min(p[0] for p in px)
+    y0 = min(p[1] for p in px)
+    return {(x - x0, y - y0): c for (x, y), c in px.items()}
 
 
-def with_legs(symbol_html):
-    """Hängt der kurzen Hose zwei Beine in Hautfarbe an, damit zwischen Hose und Schuh keine Lücke bleibt."""
-    grid = grid_of(symbol_html)
-    last = max(y for _, y in grid)
-    if last >= 30:
-        return symbol_html            # schon erledigt
-    xs = sorted(x for x, y in grid if y == last)
-    runs, start = [], xs[0]
-    for a, b in zip(xs, xs[1:] + [None]):
-        if b != a + 1:
-            runs.append((start, a))
-            start = b
-    px = dict(grid)
-    for x0, x1 in runs:
-        lx = (x0 + x1) // 2 - 2
-        for y in range(last + 1, last + 10):
-            for x in range(lx, lx + 5):
-                px[(x, y)] = SKIN_EDGE if x in (lx, lx + 4) else SKIN
-    sid = re.search(r'id="([^"]+)"', symbol_html).group(1)
-    return symbol(sid, px, "0 0 32 33")
+def module_symbol(sid, px):
+    px = getattr(px, "px", px)
+    if sid.startswith(("i-wx-", "i-hint-", "i-sys-")):
+        return symbol(sid, recenter(px), "0 0 16 16")
+    if sid in UI_VIEWBOX:
+        return symbol(sid, normalize(px), UI_VIEWBOX[sid])
+    return fit_viewbox(symbol(sid, normalize(px), "0 0 40 40"))
 
 
 SYMBOL_RE = r'<symbol id="{id}"[^>]*>.*?</symbol>'
 PATH_RE = re.compile(r'<path d="([^"]+)" fill="(#[0-9a-fA-F]{6})"/>')
 RECT_RE = re.compile(r"M(\d+) (\d+)H(\d+)V(\d+)H\d+V\d+Z")
+RECT2_RE = re.compile(r"M(\d+) (\d+)h(\d+)v(\d+)h-\d+z")
 
 
 def grid_of(symbol_html):
@@ -523,6 +311,10 @@ def grid_of(symbol_html):
         for x2, y, x1, _y2 in RECT_RE.findall(d):
             for x in range(int(x1), int(x2)):
                 grid[(x, int(y))] = color.lower()
+        for x1, y, w, h in RECT2_RE.findall(d):
+            for x in range(int(x1), int(x1) + int(w)):
+                for yy in range(int(y), int(y) + int(h)):
+                    grid[(x, yy)] = color.lower()
     return grid
 
 
@@ -545,38 +337,40 @@ def upsert(html, sid, symbol_html):
     return html[:end] + symbol_html + "\n" + html[end:]
 
 
+def remove_symbol(html, sid):
+    return re.sub(SYMBOL_RE.format(id=re.escape(sid)) + r"\n?", "", html, count=1, flags=re.S)
+
+
 def main():
+    import importlib
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
     html = INDEX.read_text()
 
     for sid, fn in WEATHER.items():
         html = upsert(html, sid, symbol(sid, recenter(fn().px), "0 0 16 16"))
-
     for sid, (fn, vb) in UI.items():
         html = upsert(html, sid, symbol(sid, fn().px, vb))
 
-    for sid, fn in NEW_CLOTHES.items():
-        html = upsert(html, sid, fit_viewbox(symbol(sid, fn().px, "0 0 32 32")))
+    count = 0
+    for name in MODULES:
+        for sid, px in importlib.import_module(name).build().items():
+            html = upsert(html, sid, module_symbol(sid, px))
+            count += 1
 
-    base = re.search(SYMBOL_RE.format(id="i-top-kapuzenpullover"), html, re.S).group(0)
-    rain = rain_jacket_from(grid_of(base))
-    html = upsert(html, "i-top-regenjacke", fit_viewbox(symbol("i-top-regenjacke", rain.px, "0 0 32 32")))
+    for sid in REMOVE:
+        html = remove_symbol(html, sid)
 
-    # Bestehende Grafiken nachbessern: Sneaker mit mehr Kontrast, kurze Hose mit Beinen
-    m = re.search(SYMBOL_RE.format(id="i-shoes-sneaker"), html, re.S)
-    sneaker = m.group(0)
-    for old, new in SNEAKER_COLORS.items():
-        sneaker = sneaker.replace(f'fill="{old}"', f'fill="{new}"')
-    html = upsert(html, "i-shoes-sneaker", sneaker)
-    m = re.search(SYMBOL_RE.format(id="i-bottom-hose-kurz"), html, re.S)
-    html = upsert(html, "i-bottom-hose-kurz", with_legs(m.group(0)))
-
-    # Alle übrigen Pixel-Kleidungsstücke: enge viewBox
+    # Alle übrigen Pixel-Kleidungsstücke (Strickjacke, Schneeanzug): enge viewBox und kompakte Pfade
     for m in list(re.finditer(r'<symbol id="(i-(?:top|bottom|shoes|head|acc)-[^"]+)"[^>]*>.*?</symbol>', html, re.S)):
         sid = m.group(1)
-        html = upsert(html, sid, fit_viewbox(re.search(SYMBOL_RE.format(id=re.escape(sid)), html, re.S).group(0)))
+        grid = grid_of(m.group(0))
+        if "h-" not in m.group(0) and grid:          # noch im alten Zeilenformat
+            html = upsert(html, sid, fit_viewbox(symbol(sid, grid, "0 0 40 40")))
+        else:
+            html = upsert(html, sid, fit_viewbox(m.group(0)))
 
     INDEX.write_text(html)
-    print("Sprite aktualisiert:", len(WEATHER) + len(UI) + len(NEW_CLOTHES) + 1, "neu gezeichnet,",
+    print("Sprite aktualisiert:", len(WEATHER) + len(UI), "Wetter/Hinweis/System,", count, "aus den Modulen,",
           "alle Kleidungs-viewBoxen angepasst")
 
     if "--preview" in sys.argv:

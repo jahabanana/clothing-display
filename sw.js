@@ -1,6 +1,6 @@
 // Kleidungs-Kiosk Service Worker
 // Jede Änderung an index.html erfordert eine neue CACHE_VERSION hier (§4.2).
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v5';
 const CACHE_NAME = `kiosk-${CACHE_VERSION}`;
 
 const APP_SHELL = [
@@ -13,7 +13,7 @@ const APP_SHELL = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
+      .then((cache) => cache.addAll(APP_SHELL.map((url) => new Request(url, { cache: 'reload' }))))   // am HTTP-Cache vorbei, sonst kann bei zwei Deploys kurz nacheinander ein alter Stand hängen bleiben
       .then(() => self.skipWaiting())
   );
 });
